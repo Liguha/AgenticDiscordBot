@@ -1,0 +1,14 @@
+name: agent_bot
+channels:
+  - conda-forge
+  - nodefaults
+
+installers:
+  ...
+
+dependencies:
+  - python=3.12
+  - pip:
+    - python-dotenv==1.2.2
+    - PyYAML==6.0.3
+    - discord.py==2.7.1
