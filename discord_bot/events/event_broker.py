@@ -32,7 +32,7 @@ class EventBroker:
         self._subscribers: dict[str, list[EventCallback]] = {}
         self._background_tasks: set[Task] = set()
 
-    def run(self) -> Task:
+    async def start(self) -> Task:
         async def listener_loop() -> None:
             try:
                 while self._running:
@@ -48,7 +48,7 @@ class EventBroker:
         self._running = True
         self._listener = create_task(listener_loop())
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
         self._running = False
         if self._listener:
             self._listener.cancel()
@@ -56,10 +56,11 @@ class EventBroker:
     async def publish(self, event: Event) -> None:
         await self._queue.put(event)
 
-    def subscribe(self, event_key: str, callback: EventCallback) -> None:
+    def subscribe(self, event_key: str, callback: EventCallback) -> Subscription:
         if event_key not in self._subscribers:
             self._subscribers[event_key] = []
         self._subscribers[event_key].append(callback)
+        return Subscription(self, event_key, callback)
 
     def unsubscribe(self, event_key: str, callback: EventCallback) -> None:
         callbacks = self._subscribers.get(event_key, [])
@@ -69,5 +70,4 @@ class EventBroker:
         cls = self.__class__
         cls.ACTIVE_BROKERS -= 1
 
-EVENT_BROKER = EventBroker()
-EVENT_BROKER.run()
+EVENT_BROKER: EventBroker = EventBroker()
