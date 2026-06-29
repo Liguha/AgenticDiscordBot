@@ -217,5 +217,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Runtime files
+runtime_files/
+
 # Development artifacts
 \[dev\]*

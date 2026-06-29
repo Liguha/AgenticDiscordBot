@@ -1,9 +1,9 @@
 from collections.abc import Callable, Awaitable
 from typing import Any
 from functools import wraps
-from discord import Client, Message
+from discord import Client, Message, Guild
 from .base import EventProducer
-from ..event_models import DiscordMessageEvent
+from ..event_models import DiscordMessageEvent, DiscordGuildJoinEvent
 from ..event_broker import EventBroker
 
 __all__ = ["DiscrordEventProducer"]
@@ -36,6 +36,10 @@ class DiscrordEventProducer(EventProducer):
         if msg.author == self._client.user:
             return
         await self.broker.publish(DiscordMessageEvent(msg, msg.guild))
+
+    @discord_event
+    async def on_guild_join(self, guild: Guild) -> None:
+        await self.broker.publish(DiscordGuildJoinEvent(guild))
     
     async def start(self) -> None:
         for name in dir(self):

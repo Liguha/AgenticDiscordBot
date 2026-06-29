@@ -2,17 +2,25 @@ from dataclasses import dataclass
 from typing import ClassVar
 from discord import Message, Guild
 from .base import Event
-from ...enums import PlatformEnum
 
-__all__ = ["DiscordEvent", "DiscordMessageEvent"]
+__all__ = ["DiscordEvent", "DiscordInGuildEvent", "DiscordGuildJoinEvent", "DiscordMessageEvent"]
 
-@dataclass(init=False)
-class DiscordEvent[PayloadType](Event[PayloadType]):
-    guild: Guild
+class DiscordEvent[PayloadType](Event[PayloadType]):    # just for typing
     label: ClassVar[str] = "general"
 
+@dataclass
+class DiscordGuildJoinEvent(DiscordEvent[Guild]):
+    label: ClassVar[str] = "guild"
+
+    @classmethod
+    def key_from_context(cls) -> str:
+        return f"ds.{cls.label}"
+
+@dataclass(init=False)
+class DiscordInGuildEvent[PayloadType](DiscordEvent[PayloadType]):
+    guild: Guild
+
     def __init__(self, payload: PayloadType, guild: Guild) -> None:
-        self.platform = PlatformEnum.DISCORD
         self.payload = payload
         self.guild = guild
 
@@ -24,5 +32,5 @@ class DiscordEvent[PayloadType](Event[PayloadType]):
     def key_from_context(cls, guild: Guild) -> str:
         return f"ds.{cls.label}.{guild.id}"
     
-class DiscordMessageEvent(DiscordEvent[Message]):
+class DiscordMessageEvent(DiscordInGuildEvent[Message]):
     label: ClassVar[str] = "msg"
