@@ -4,7 +4,7 @@ from discord import Guild, Client
 from ..base import Router
 from ..state_manager import GroupState
 from ...events import EventBroker, DiscordMessageEvent, DiscordGuildJoinEvent
-from ...actions import send_message, ExecutionContext
+from ...actions import send_message
 from ...globals import TriggerEnum
 
 __all__ = ["DiscordCLIRouter", "DiscordCLIGuildRouter"]
@@ -15,13 +15,17 @@ class DiscordCLIRouter(Router):
         self._client = client
         self._routers: list[DiscordCLIGuildRouter] = []
 
+    @classmethod
+    def group_from_context(cls) -> str:
+        return "ds_cli"
+
     @property
     def client(self) -> Client:
         return self._client
     
     @property
     def group_id(self) -> str:
-        return "ds_cli"
+        return self.group_from_context()
 
     async def start(self) -> None:
         guilds = self.client.fetch_guilds()
@@ -36,7 +40,7 @@ class DiscordCLIRouter(Router):
         self._routers.append(DiscordCLIGuildRouter(self.client, 
                                                    guild, 
                                                    self.broker, 
-                                                   self.group_state[DiscordCLIGuildRouter.group_from_guild(guild)]
+                                                   self.group_state[DiscordCLIGuildRouter.group_from_context(guild)]
                                                    ))
         await self._routers[-1].start()
 
@@ -59,18 +63,17 @@ class DiscordCLIGuildRouter(Router):
     def guild(self) -> Guild:
         return self._guild
     
-    @staticmethod
-    def group_from_guild(guild: Guild) -> str:
+    @classmethod
+    def group_from_context(cls, guild: Guild) -> str:
         return f"{guild.id}"
     
     @property
     def group_id(self) -> str:
-        return self.group_from_guild(self.guild)
+        return self.group_from_context(self.guild)
 
     async def route_message(self, msg_event: DiscordMessageEvent) -> None:
         msg = msg_event.payload
-        ctx = ExecutionContext(TriggerEnum.CLI, self.client, self.guild, msg.channel)
-        _, state = await send_message(ctx, None, msg.content)   # echo placeholder
+        _, state = await send_message(self.client, None, msg.channel, msg.content)   # echo placeholder
 
     async def start(self) -> None:
         event_key = DiscordMessageEvent.key_from_context(self.guild)

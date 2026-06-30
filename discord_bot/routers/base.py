@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 from .state_manager import GroupState
 from ..events import EventBroker
 from ..utils import Serializable
@@ -9,6 +10,11 @@ class Router(ABC):
     def __init__(self, broker: EventBroker, group_state: GroupState) -> None:
         self._broker = broker
         self._state = group_state
+
+    @classmethod
+    @abstractmethod
+    def group_from_context(cls, *args: Any, **kwds: Any) -> str:
+        pass
 
     @property
     def broker(self) -> EventBroker:

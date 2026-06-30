@@ -22,7 +22,7 @@ async def main() -> None:
     await client.login(ds_token)
     discord_producer = DiscrordEventProducer(client, EVENT_BROKER)
     await discord_producer.start()
-    discord_cli_router = DiscordCLIRouter(client, EVENT_BROKER, root_group)
+    discord_cli_router = DiscordCLIRouter(client, EVENT_BROKER, root_group[DiscordCLIRouter.group_from_context()])
     await discord_cli_router.start()
     await client.connect()
 
