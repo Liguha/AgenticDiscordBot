@@ -1,8 +1,6 @@
 from pydantic import BaseModel
 
-__all__ = ["Model"]
+__all__ = ["PrefixState"]
 
-# TODO: remove it, just for testing
-class Model(BaseModel):
-    x: int
-    y: float
+class PrefixState(BaseModel):
+    prefix: str

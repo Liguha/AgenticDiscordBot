@@ -1,9 +1,15 @@
 from dataclasses import dataclass
 from typing import ClassVar
-from discord import Message, Guild
+from discord import Message, Guild, Interaction
 from .base import Event
 
-__all__ = ["DiscordEvent", "DiscordInGuildEvent", "DiscordGuildJoinEvent", "DiscordMessageEvent"]
+__all__ = [
+    "DiscordEvent", 
+    "DiscordInGuildEvent", 
+    "DiscordGuildJoinEvent", 
+    "DiscordMessageEvent",
+    "DiscordInteractionEvent"
+]
 
 class DiscordEvent[PayloadType](Event[PayloadType]):    # just for typing
     label: ClassVar[str] = "general"
@@ -34,3 +40,6 @@ class DiscordInGuildEvent[PayloadType](DiscordEvent[PayloadType]):
     
 class DiscordMessageEvent(DiscordInGuildEvent[Message]):
     label: ClassVar[str] = "msg"
+
+class DiscordInteractionEvent(DiscordInGuildEvent[Interaction]):
+    label: ClassVar[str] = "inter"

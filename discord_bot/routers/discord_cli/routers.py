@@ -1,11 +1,12 @@
 from __future__ import annotations
 from asyncio import gather
 from discord import Guild, Client
+from .commands import InteractionCommand, MessageCommand
 from ..base import Router
 from ..state_manager import GroupState
-from ...events import EventBroker, DiscordMessageEvent, DiscordGuildJoinEvent
+from ...events import EventBroker, DiscordMessageEvent, DiscordGuildJoinEvent, DiscordInteractionEvent
 from ...actions import send_message
-from ...globals import TriggerEnum
+from ...state_types import PrefixState
 
 __all__ = ["DiscordCLIRouter", "DiscordCLIGuildRouter"]
 
@@ -54,6 +55,12 @@ class DiscordCLIGuildRouter(Router):
         super().__init__(broker, group_state)
         self._guild = guild
         self._client = client
+        if self.group_state["prefix"][...] is None: # hardcode for specific service command
+            self.group_state["prefix"][...] = PrefixState(prefix=">")
+
+    @property
+    def message_prefix(self) -> str:
+        return self.group_state["prefix"][...].prefix
 
     @property
     def client(self) -> Client:
@@ -73,11 +80,30 @@ class DiscordCLIGuildRouter(Router):
 
     async def route_message(self, msg_event: DiscordMessageEvent) -> None:
         msg = msg_event.payload
-        _, state = await send_message(self.client, None, msg.channel, msg.content)   # echo placeholder
+        content = msg.content
+        prefix = self.message_prefix
+        if not content.startswith(prefix):
+            return
+        cmd, args = content.lstrip(prefix).split(" ", maxsplit=1)
+        func = MessageCommand.from_name(cmd)
+        kwds = func.parse_arguments(self.client, msg, args)
+        state = self.group_state[func.group_id][...]
+        self.group_state[func.group_id][...] = await func(self.client, msg, state, **kwds)
+
+    async def route_interaction(self, interact_event: DiscordInteractionEvent) -> None:
+        interaction = interact_event.payload
+        name = interaction.command.name
+        func = InteractionCommand.from_name(name)
+        kwds = {x["name"]: x["value"] for x in interaction.data["options"]} # TODO: generalize rudimentary parser
+        state = self.group_state[func.group_id][...]
+        self.group_state[func.group_id][...] = await func.evaluate(interaction, state, **kwds)
 
     async def start(self) -> None:
-        event_key = DiscordMessageEvent.key_from_context(self.guild)
-        self._sub = self.broker.subscribe(event_key, self.route_message)
+        msg_key = DiscordMessageEvent.key_from_context(self.guild)
+        inter_key = DiscordInteractionEvent.key_from_context(self.guild)
+        self._sub_msg = self.broker.subscribe(msg_key, self.route_message)
+        self._sub_inter = self.broker.subscribe(inter_key, self.route_interaction)
 
     async def stop(self) -> None:
-        self._sub.cancel()
+        self._sub_msg.cancel()
+        self._sub_inter.cancel()

@@ -5,7 +5,7 @@ from asyncio import gather
 from dotenv import load_dotenv
 from discord import Client, Intents
 from .events import EVENT_BROKER, DiscrordEventProducer
-from .routers import StateManager, DiscordCLIRouter
+from .routers import StateManager, DiscordCLIRouter, InteractionCommand
 from .globals import SERIALIZATION_PERIOD
 
 async def main() -> None:
@@ -20,10 +20,12 @@ async def main() -> None:
     intents.message_content = True
     client = Client(intents=intents)
     await client.login(ds_token)
+    await InteractionCommand.register_all(client)
     discord_producer = DiscrordEventProducer(client, EVENT_BROKER)
     await discord_producer.start()
     discord_cli_router = DiscordCLIRouter(client, EVENT_BROKER, root_group[DiscordCLIRouter.group_from_context()])
     await discord_cli_router.start()
+    # run client
     await client.connect()
 
 if __name__ == "__main__":
