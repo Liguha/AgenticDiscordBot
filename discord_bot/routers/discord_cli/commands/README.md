@@ -9,6 +9,7 @@
 
 from discord import app_commands, Interaction, Message, Client
 from .base import MessageCommand, InteractionCommand
+from ....events import EventBroker
 
 __all__ = ["message_COMMAND_NAME", "interaction_COMMAND_NAME"]
 
@@ -20,11 +21,11 @@ ARGS_DESC = {
 
 @MessageCommand.add_descriptions(**ARGS_DESC)
 @MessageCommand.with_name("COMMAND_NAME")
-async def message_COMMAND_NAME(client: Client, message: Message, state: ..., ...) -> None:
+async def message_COMMAND_NAME(broker: EventBroker, client: Client, message: Message, state: ..., ...) -> None:
     ...
 
 @app_commands.describe(**ARGS_DESC)
 @InteractionCommand.with_name("COMMAND_NAME")
-async def interaction_COMMAND_NAME(interaction: Interaction, state: ..., ...) -> None:
+async def interaction_COMMAND_NAME(broker: EventBroker, interaction: Interaction, state: ..., ...) -> None:
     ...
 ```

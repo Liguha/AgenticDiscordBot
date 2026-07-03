@@ -7,6 +7,7 @@ __all__ = [
     "DiscordEvent", 
     "DiscordInGuildEvent", 
     "DiscordGuildJoinEvent", 
+    "DiscordCallabackEvent",
     "DiscordMessageEvent",
     "DiscordInteractionEvent"
 ]
@@ -37,6 +38,14 @@ class DiscordInGuildEvent[PayloadType](DiscordEvent[PayloadType]):
     @classmethod
     def key_from_context(cls, guild: Guild) -> str:
         return f"ds.{cls.label}.{guild.id}"
+    
+class DiscordCallabackEvent[PayloadType](DiscordInGuildEvent[PayloadType]):
+    label: ClassVar[str] = "clbk"
+
+    def __init__(self, name: str, payload: PayloadType, guild: Guild) -> None:
+        self.payload = payload
+        self.guild = guild
+        self.name = name
     
 class DiscordMessageEvent(DiscordInGuildEvent[Message]):
     label: ClassVar[str] = "msg"

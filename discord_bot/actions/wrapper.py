@@ -3,6 +3,7 @@ from typing import Any, Protocol, Concatenate, ClassVar
 from collections.abc import Callable, Awaitable
 from discord import Client, User
 from discord.abc import GuildChannel
+from ..events import EventBroker
 
 __all__ = ["Action"]
 
@@ -20,7 +21,7 @@ class Action[**ExtraArgs, StateType, ReturnType](Protocol):
     ID_PARSERS_REGISTRY: ClassVar[dict[type, Callable[[Client, Any], Awaitable[Any]]]] = _ID_PARSERS_REGISTRY
 
     def __init__(self,
-                 func: Callable[Concatenate[Client, StateType, ExtraArgs], Awaitable[tuple[ReturnType, StateType]]]
+                 func: Callable[Concatenate[EventBroker, Client, StateType, ExtraArgs], Awaitable[tuple[ReturnType, StateType]]]
                 ) -> None:
         self._func = func
         self._sig = inspect.signature(func)
@@ -42,8 +43,8 @@ class Action[**ExtraArgs, StateType, ReturnType](Protocol):
     async def id_to_user(client: Client, uid: int | str) -> User:
         return await client.fetch_user(int(uid))
 
-    async def __call__(self, client: Client, state: StateType, *args: ExtraArgs.args, **kwds: ExtraArgs.kwargs) -> tuple[ReturnType, StateType]:
-        bound = self._sig.bind(client, state, *args, **kwds)
+    async def __call__(self, broker: EventBroker, client: Client, state: StateType, *args: ExtraArgs.args, **kwds: ExtraArgs.kwargs) -> tuple[ReturnType, StateType]:
+        bound = self._sig.bind(broker, client, state, *args, **kwds)
         bound.apply_defaults()
         for name, value in bound.arguments.items():
             param = self._sig.parameters[name]

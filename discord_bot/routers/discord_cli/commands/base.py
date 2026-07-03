@@ -7,8 +7,9 @@ from typing import Any, Protocol, ClassVar, Concatenate
 from types import ModuleType
 from functools import partial
 from discord import Message, Client, Interaction, app_commands
+from ....events import EventBroker
 
-__all__ = ["MessageCommand", "InteractionCommand"]
+__all__ = ["MessageCommand", "InteractionCommand", "CallbackPostprocessing"]
 
 type ContextParser = Callable[[str, Client, Message], Any]
 
@@ -30,7 +31,11 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
         return wrapper
 
     @classmethod
-    def with_name(cls, command_name: str, group_id: str | None = None) -> Callable[[Callable[[Client, StateType, Message], Awaitable[StateType]]], MessageCommand[StateType]]:
+    def with_name(cls, command_name: str, group_id: str | None = None) -> Callable[
+                                                                            [Callable[
+                                                                                Concatenate[EventBroker, Client, StateType, ExtraArgs], 
+                                                                                Awaitable[StateType]]], 
+                                                                            MessageCommand[StateType]]:
         return partial(cls, command_name=command_name, group_id=group_id)
 
     @classmethod
@@ -38,7 +43,7 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
         return cls.COMMANDS[command_name]
         
     def __init__(self,
-                 func: Callable[Concatenate[Client, Message, StateType, ExtraArgs], Awaitable[StateType]],
+                 func: Callable[Concatenate[EventBroker, Client, Message, StateType, ExtraArgs], Awaitable[StateType]],
                  /, *, 
                  command_name: str,
                  group_id: str | None = None
@@ -62,7 +67,7 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
     
     def parse_arguments(self, client: Client, message: Message, args_line: str) -> dict[str, Any]:
         tokens = shlex.split(args_line)
-        target_params = list(inspect.signature(self).parameters.values())[3:]    # skip client, msg and state
+        target_params = list(inspect.signature(self).parameters.values())[4:]    # skip brocker, client, msg and state
         kwds: dict[str, Any] = {}
         for i, param in enumerate(target_params):
             if i < len(tokens):
@@ -83,7 +88,7 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
     
     @property
     def help(self) -> str:  # TODO: localization ??? 
-        target_params = list(inspect.signature(self).parameters.values())[3:]
+        target_params = list(inspect.signature(self).parameters.values())[4:]
         usage_elements = []
         for param in target_params:
             if param.default == inspect.Parameter.empty:
@@ -91,7 +96,7 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
             else:
                 usage_elements.append(f"[{param.name}]")
         usage_suffix = f" {" ".join(usage_elements)}" if usage_elements else ""
-        usage_line = f"Usage: >{self._cid}{usage_suffix}"
+        usage_line = f"Usage: {self._cid}{usage_suffix}"
         lines = [
             usage_line,
             f"\nDescription:\n  {self.__doc__.strip() if self.__doc__ else "No description provided."}\n",
@@ -112,16 +117,20 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
         # little hack
         return getattr(self._func, name)
     
-    async def __call__(self, client: Client, message: Message, state: StateType, *args: ExtraArgs.args, **kwds: ExtraArgs.kwds) -> StateType:
+    async def __call__(self, broker: EventBroker, client: Client, message: Message, state: StateType, *args: ExtraArgs.args, **kwds: ExtraArgs.kwds) -> StateType:
         async with message.channel.typing():
-            return await self._func(client, message, state, *args, **kwds)
+            return await self._func(broker, client, message, state, *args, **kwds)
 
 class InteractionCommand[StateType, **ExtraArgs](Protocol):
     COMMANDS: ClassVar[dict[str, InteractionCommand]] = {}
     _INTERACTIONS_LIST: ClassVar[list[ModuleType, str, str]] = []
 
     @classmethod
-    def with_name(cls, command_name: str, group_id: str | None = None) -> Callable[[Callable[[Client, StateType, Interaction], Awaitable[StateType]]], InteractionCommand[StateType]]:
+    def with_name(cls, command_name: str, group_id: str | None = None) -> Callable[
+                                                                            [Callable[
+                                                                                Concatenate[EventBroker, Client, StateType, ExtraArgs], 
+                                                                                Awaitable[StateType]]], 
+                                                                            InteractionCommand[StateType]]:
         return partial(cls, command_name=command_name, group_id=group_id)  
 
     @classmethod
@@ -138,7 +147,7 @@ class InteractionCommand[StateType, **ExtraArgs](Protocol):
         await tree.sync()
         
     def __init__(self,
-                 func: Callable[Concatenate[Interaction, StateType, ExtraArgs], Awaitable[StateType]],
+                 func: Callable[Concatenate[EventBroker, Interaction, StateType, ExtraArgs], Awaitable[StateType]],
                  /, *, 
                  command_name: str,
                  group_id: str | None = None
@@ -150,7 +159,7 @@ class InteractionCommand[StateType, **ExtraArgs](Protocol):
         self.__class__._INTERACTIONS_LIST.append((self._func.__module__, self._func.__name__, command_name))
         self.__doc__ = sys.modules[func.__module__].__doc__
         original_sig = inspect.signature(func)
-        cleared_params = [p for i, p in enumerate(original_sig.parameters.values()) if i != 1]  # state always second
+        cleared_params = [p for i, p in enumerate(original_sig.parameters.values()) if i not in [0, 2]]  # neither broker nor state
         self.__signature__ = original_sig.replace(parameters=cleared_params)
     
     @property
@@ -168,5 +177,37 @@ class InteractionCommand[StateType, **ExtraArgs](Protocol):
     async def __call__(self, interaction: Interaction, *args: ExtraArgs.args, **kwds: ExtraArgs.kwds) -> None:
         await interaction.response.defer(thinking=True)
     
-    async def evaluate(self, interaction: Interaction, state: StateType, *args: ExtraArgs.args, **kwds: ExtraArgs.kwds) -> StateType:
-        return await self._func(interaction, state, *args, **kwds)
+    async def evaluate(self, broker: EventBroker, interaction: Interaction, state: StateType, *args: ExtraArgs.args, **kwds: ExtraArgs.kwds) -> StateType:
+        return await self._func(broker, interaction, state, *args, **kwds)
+    
+class CallbackPostprocessing[StateType, Payload](Protocol):
+    CALLBACKS: ClassVar[dict[str, CallbackPostprocessing]] = {}
+
+    @classmethod
+    def with_name(cls, callback_name: str, group_id: str) -> Callable[[Callable[[StateType, Payload], StateType]], CallbackPostprocessing[StateType, Payload]]:
+        return partial(cls, callback_name=callback_name, group_id=group_id)  
+    
+    @classmethod
+    def from_name(cls, callback_name: str) -> CallbackPostprocessing:
+        return cls.CALLBACKS[callback_name]
+
+    def __init__(self,
+                 func: Callable[[StateType, Payload], Awaitable[StateType]],
+                 /, *, 
+                 callback_name: str,
+                 group_id: str
+                ) -> None:
+        self._func = func
+        self._cid = callback_name
+        self._gid = group_id
+
+    @property
+    def callback_name(self) -> str:
+        return self._cid
+    
+    @property
+    def group_id(self) -> str:
+        return self._gid
+    
+    async def __call__(self, state: StateType, payload: Payload) -> StateType:
+        return await self._func(state, payload)
