@@ -3,8 +3,8 @@ import sys
 import inspect
 import shlex
 from collections.abc import Callable, Awaitable
-from typing import Any, Protocol, ClassVar, Concatenate
-from types import ModuleType
+from typing import Any, Protocol, ClassVar, Concatenate, get_origin, get_args, Union
+from types import ModuleType, UnionType
 from functools import partial
 from discord import Message, Client, Interaction, app_commands
 from ....events import EventBroker
@@ -39,8 +39,8 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
         return partial(cls, command_name=command_name, group_id=group_id)
 
     @classmethod
-    def from_name(cls, command_name: str) -> MessageCommand:
-        return cls.COMMANDS[command_name]
+    def from_name(cls, command_name: str) -> MessageCommand | None:
+        return cls.COMMANDS.get(command_name)
         
     def __init__(self,
                  func: Callable[Concatenate[EventBroker, Client, Message, StateType, ExtraArgs], Awaitable[StateType]],
@@ -67,18 +67,40 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
     
     def parse_arguments(self, client: Client, message: Message, args_line: str) -> dict[str, Any]:
         tokens = shlex.split(args_line)
-        target_params = list(inspect.signature(self).parameters.values())[4:]    # skip brocker, client, msg and state
+        target_params = list(inspect.signature(self).parameters.values())[4:]    # skip broker, client, msg and state
         kwds: dict[str, Any] = {}
+        NoneType = type(None)
         for i, param in enumerate(target_params):
             if i < len(tokens):
                 raw_token = tokens[i]
                 if param.name in self._parsers:
-                    kwds[param.name] = self._parsers[param.name](raw_token)
-                elif param.annotation == bool:
-                    kwds[param.name] = raw_token.lower() in ("true", "1", "yes", "y", "on")
-                elif param.annotation in (int, float, str):
-                    kwds[param.name] = param.annotation(raw_token)
+                    kwds[param.name] = self._parsers[param.name](raw_token, client, message)
+                    continue
+                annotation = param.annotation
+                origin = get_origin(annotation)
+                if origin in (Union, UnionType):
+                    possible_types = get_args(annotation)
                 else:
+                    possible_types = (annotation,)
+                if raw_token.lower() in ("none", "null") and NoneType in possible_types:
+                    kwds[param.name] = None
+                    continue
+                parsed = False
+                for t in possible_types:
+                    if t is NoneType:
+                        continue
+                    if t == bool:
+                        kwds[param.name] = raw_token.lower() in ("true", "1", "yes", "y", "on")
+                        parsed = True
+                        break
+                    elif t in (int, float, str):
+                        try:
+                            kwds[param.name] = t(raw_token)
+                            parsed = True
+                            break
+                        except ValueError:
+                            continue 
+                if not parsed:
                     kwds[param.name] = raw_token
             elif param.default != inspect.Parameter.empty:
                 kwds[param.name] = param.default
@@ -134,8 +156,8 @@ class InteractionCommand[StateType, **ExtraArgs](Protocol):
         return partial(cls, command_name=command_name, group_id=group_id)  
 
     @classmethod
-    def from_name(cls, command_name: str) -> InteractionCommand:
-        return cls.COMMANDS[command_name]
+    def from_name(cls, command_name: str) -> InteractionCommand | None:
+        return cls.COMMANDS.get(command_name)
     
     @classmethod
     async def register_all(cls, client: Client) -> None:
@@ -188,8 +210,8 @@ class CallbackPostprocessing[StateType, Payload](Protocol):
         return partial(cls, callback_name=callback_name, group_id=group_id)  
     
     @classmethod
-    def from_name(cls, callback_name: str) -> CallbackPostprocessing:
-        return cls.CALLBACKS[callback_name]
+    def from_name(cls, callback_name: str) -> CallbackPostprocessing | None:
+        return cls.CALLBACKS.get(callback_name)
 
     def __init__(self,
                  func: Callable[[StateType, Payload], Awaitable[StateType]],
@@ -200,6 +222,7 @@ class CallbackPostprocessing[StateType, Payload](Protocol):
         self._func = func
         self._cid = callback_name
         self._gid = group_id
+        self.__class__.CALLBACKS[callback_name] = self
 
     @property
     def callback_name(self) -> str:

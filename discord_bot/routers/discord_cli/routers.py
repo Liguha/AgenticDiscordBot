@@ -55,7 +55,7 @@ class DiscordCLIGuildRouter(Router):
         self._guild = guild
         self._client = client
         if self.group_state["prefix"][...] is None: # hardcode for specific service command
-            self.group_state["prefix"][...] = PrefixState(prefix=">")
+            self.group_state["prefix"][...] = PrefixState()
 
     @property
     def message_prefix(self) -> str:
@@ -86,20 +86,32 @@ class DiscordCLIGuildRouter(Router):
         l = content.lstrip(prefix).split(" ", maxsplit=1)
         cmd, args = l if len(l) == 2 else [l[0], ""]
         func = MessageCommand.from_name(cmd)
+        if func is None:
+            async with msg.channel.typing():
+                await msg.reply(f"Command `{cmd}` doesn't exist.")
+            return
         kwds = func.parse_arguments(self.client, msg, args)
         state = self.group_state[func.group_id][...]
         self.group_state[func.group_id][...] = await func(self.broker, self.client, msg, state, **kwds)
 
     async def route_interaction(self, interact_event: DiscordInteractionEvent) -> None:
         interaction = interact_event.payload
-        name = interaction.command.name
+        name = getattr(interaction.command, "name")
+        if name is None:
+            return
         func = InteractionCommand.from_name(name)
+        if func is None:
+            await interaction.response.defer(thinking=True)
+            await interaction.followup.send(f"Command `{name}` doesn't exist.")
+            return
         kwds = {x["name"]: x["value"] for x in interaction.data.get("options", {})} # TODO: generalize rudimentary parser
         state = self.group_state[func.group_id][...]
         self.group_state[func.group_id][...] = await func.evaluate(self.broker, interaction, state, **kwds)
 
     async def route_callback(self, callback_event: DiscordCallabackEvent) -> None:
         func = CallbackPostprocessing.from_name(callback_event.name)
+        if func is None:
+            return
         state = self.group_state[func.group_id][...]
         self.group_state[func.group_id][...] = await func(state, callback_event.payload)
 

@@ -4,12 +4,19 @@ channels:
   - nodefaults
 
 installers:
-  ...
+  ffmpeg:
+    apt: ffmpeg
+    pacman: ffmpeg
+    dnf: ffmpeg
+    yum: ffmpeg
 
 dependencies:
   - python=3.12
+  - ffmpeg
   - pip:
     - python-dotenv==1.2.2
     - PyYAML==6.0.3
-    - discord.py==2.7.1
+    - discord.py[voice]==2.7.1
     - pydantic==2.8.2
+    - yt-dlp==2026.6.9
+    - spotipy==2.26.0
