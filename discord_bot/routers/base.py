@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from typing import Any
 from .state_manager import GroupState
 from ..events import EventBroker
-from ..utils import Serializable
 
 __all__ = ["Router"]
 
