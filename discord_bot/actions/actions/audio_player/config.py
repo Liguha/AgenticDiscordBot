@@ -1,9 +1,13 @@
 import yt_dlp
 
-__all__ = ["YTDL", "FFMPEG_OPTIONS"]
+__all__ = ["YTDL_SEARCH", "YTDL_PLAYER", "FFMPEG_OPTIONS", "HIGH_BITRATE"]
 
-YTDL_OPTIONS = {
-    "format": "bestaudio[abr<=96]/bestaudio[abr<=128]/bestaudio/best",
+HIGH_BITRATE = 64  
+
+YTDL_FORMAT_FILTER = f"bestaudio[abr<={HIGH_BITRATE}]/bestaudio/best"
+
+YTDL_SEARCH_OPTIONS = {
+    "format": YTDL_FORMAT_FILTER,
     "restrictfilenames": True,
     "noplaylist": True,
     "nocheckcertificate": True,
@@ -13,13 +17,32 @@ YTDL_OPTIONS = {
     "no_warnings": True,
     "default_search": "ytsearch",
     "source_address": "0.0.0.0",
-    "youtube_include_dash_manifest": False,
-    "youtube_include_hls_manifest": False,
+    "extract_flat": "in_playlist",
+    "process": False,
+}
+
+YTDL_PLAYER_OPTIONS = {
+    "format": YTDL_FORMAT_FILTER,
+    "restrictfilenames": True,
+    "noplaylist": True,
+    "nocheckcertificate": True,
+    "ignoreerrors": False,
+    "logtostderr": False,
+    "quiet": True,
+    "no_warnings": True,
+    "source_address": "0.0.0.0",
 }
 
 FFMPEG_OPTIONS = {
-    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -reconnect_on_network_error 1",
-    "options": "-vn -thread_queue_size 4096",
+    "before_options": (
+        "-reconnect 1 "
+        "-reconnect_streamed 1 "
+        "-reconnect_delay_max 5 "
+        "-thread_queue_size 1024 "
+        "-fflags +genpts"
+    ),
+    "options": "-vn -af aresample=async=1:min_hard_comp=0.010000:first_pts=0"
 }
 
-YTDL = yt_dlp.YoutubeDL(YTDL_OPTIONS)
+YTDL_SEARCH = yt_dlp.YoutubeDL(YTDL_SEARCH_OPTIONS)
+YTDL_PLAYER = yt_dlp.YoutubeDL(YTDL_PLAYER_OPTIONS)

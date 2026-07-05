@@ -22,6 +22,8 @@ async def skip_track(broker: EventBroker, client: Client, state: AudioPlayerStat
     if vc is None:
         return False, state
     if vc.is_playing() or vc.is_paused():
+        if hasattr(vc, "_player") and vc._player:
+            vc._player.after = None
         vc.stop()
         return True, (await play_next_track._func(broker, client, state, guild))[1]
     return False, state

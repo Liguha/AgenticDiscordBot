@@ -11,15 +11,13 @@ __all__ = [
 class PrefixState(BaseModel):
     prefix: str = ">"
 
-AudioSourceType = Literal["youtube", "spotify"]
+AudioSourceType = Literal["youtube", "soundcloud"]
 
 class AudioTrack(BaseModel):
     title: str
-    url: str                # Streamable raw file URL or absolute path
-    source_url: str         # Original track link (e.g. YouTube, Spotify)
-    duration: float         # In seconds
+    url: str
+    duration: float
     source_type: AudioSourceType
-    thumbnail: str | None = None
 
 class AudioPlayerState(BaseModel):
     queue: list[AudioTrack] = []
