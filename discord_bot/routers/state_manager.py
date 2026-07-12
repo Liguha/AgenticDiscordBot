@@ -2,13 +2,15 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from asyncio import create_task, sleep, CancelledError, Task
-from typing import Any, ClassVar, overload, NoReturn
+from typing import Any, ClassVar, overload, NoReturn, TYPE_CHECKING
 from types import EllipsisType, ModuleType
 from dataclasses import dataclass, field
 from pathlib import Path
-from pydantic import BaseModel
 from importlib import import_module
 from ..globals import RUNTIME_FOLDER
+
+if TYPE_CHECKING:
+    from ..state_types import BaseState
 
 __all__ = ["GroupState", "StateManager"]
 
@@ -16,11 +18,11 @@ DEFAULT_PATH = RUNTIME_FOLDER / "states.json"
 
 class GroupTreeProtocol(ABC):
     @abstractmethod
-    def get_shared(self) -> BaseModel | None:
+    def get_shared(self) -> BaseState | None:
         pass
     
     @abstractmethod
-    def set_shared(self, data: BaseModel | None = None) -> None:
+    def set_shared(self, data: BaseState | None = None) -> None:
         pass
     
     @abstractmethod
@@ -30,17 +32,17 @@ class GroupTreeProtocol(ABC):
     @overload
     def __getitem__(self, key: str) -> GroupState: ...
     @overload
-    def __getitem__(self, key: EllipsisType) -> BaseModel | None: ...
-    def __getitem__(self, key: str | EllipsisType) -> GroupState | BaseModel | None:
+    def __getitem__(self, key: EllipsisType) -> BaseState | None: ...
+    def __getitem__(self, key: str | EllipsisType) -> GroupState | BaseState | None:
         if isinstance(key, str):
             return self.get_subgroup(key)
         return self.get_shared()
     
     @overload
-    def __setitem__(self, key: str, value: BaseModel | None) -> NoReturn: ...
+    def __setitem__(self, key: str, value: BaseState | None) -> NoReturn: ...
     @overload
-    def __setitem__(self, key: EllipsisType, value: BaseModel | None) -> None: ...
-    def __setitem__(self, key: str | EllipsisType, value: BaseModel | None) -> NoReturn | None:
+    def __setitem__(self, key: EllipsisType, value: BaseState | None) -> None: ...
+    def __setitem__(self, key: str | EllipsisType, value: BaseState | None) -> NoReturn | None:
         if isinstance(key, str):
             raise IndexError("Can't assign to group.")
         return self.set_shared(value)
@@ -50,14 +52,14 @@ class GroupState(GroupTreeProtocol):
     SHARED_KEY: ClassVar[str] = "shared"
     TYPE_KEY: ClassVar[str] = "dtype"
 
-    data: dict[str, dict | BaseModel] = field(default_factory=dict)
+    data: dict[str, dict | BaseState] = field(default_factory=dict)
 
     @classmethod
     def deserialize(cls, serialized: dict[str, Any]) -> GroupState:
-        def recursive_parser(data: dict[str, Any], states_module: ModuleType) -> dict[str, BaseModel | dict]:
+        def recursive_parser(data: dict[str, Any], states_module: ModuleType) -> dict[str, BaseState | dict]:
             group_state = {}
             if cls.SHARED_KEY in data:
-                dtype: type[BaseModel] = getattr(states_module, data[cls.TYPE_KEY])
+                dtype: type[BaseState] = getattr(states_module, data[cls.TYPE_KEY])
                 group_state[cls.SHARED_KEY] = dtype.model_validate(data[cls.SHARED_KEY])
             for key, value in data.items():
                 if key == cls.SHARED_KEY or key == cls.TYPE_KEY or value is None:
@@ -72,7 +74,7 @@ class GroupState(GroupTreeProtocol):
         for key in self.data.keys():
             if key == self.SHARED_KEY:
                 data = self.get_shared()
-                if data is None:
+                if data is None or getattr(data, "__SKIP_DUMP__", False):
                     continue
                 serialized[self.SHARED_KEY] = data.model_dump()
                 serialized[self.TYPE_KEY] = data.__class__.__name__
@@ -80,10 +82,10 @@ class GroupState(GroupTreeProtocol):
                 serialized[key] = self.get_subgroup(key).serialize()
         return serialized
 
-    def get_shared(self) -> BaseModel | None:
+    def get_shared(self) -> BaseState | None:
         return self.data.get(self.SHARED_KEY)
     
-    def set_shared(self, data: BaseModel | None = None) -> None:
+    def set_shared(self, data: BaseState | None = None) -> None:
         self.data[self.SHARED_KEY] = data
     
     def get_subgroup(self, group_id: str) -> GroupState:
@@ -113,10 +115,10 @@ class StateManager(GroupTreeProtocol):
     def group_state(self) -> GroupState:
         return self._storage
 
-    def get_shared(self) -> BaseModel | None:
+    def get_shared(self) -> BaseState | None:
         return self.group_state.get_shared()
     
-    def set_shared(self, data: BaseModel | None = None) -> None:
+    def set_shared(self, data: BaseState | None = None) -> None:
         return self.group_state.set_shared(data)
     
     def get_subgroup(self, group_id: str) -> GroupState:

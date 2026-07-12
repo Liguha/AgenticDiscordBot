@@ -15,7 +15,6 @@ from .....state_types import AudioPlayerState, AudioSourceType
 
 __all__ = ["message_play", "interaction_play", "callback_track_finished"]
 
-
 PLATFORMS = get_args(AudioSourceType)
 ARGS_DESC = {
     "query": "The title, search keywords, or URL of the track you want to play.",
@@ -86,7 +85,7 @@ async def message_play(broker: EventBroker,
                        limit: int = 1
                       ) -> AudioPlayerState:
     guild = message.guild
-    joined, _ = await join_voice_to_user(broker, client, None, guild, message.author)
+    joined, state = await join_voice_to_user(broker, client, state, guild, message.author)
     if not joined and not guild.voice_client:
         await message.reply("❌ You must be in a voice channel for me to join and play music!")
         return state
@@ -137,7 +136,7 @@ async def interaction_play(broker: EventBroker,
                            limit: int = 1
                           ) -> AudioPlayerState:
     guild = interaction.guild
-    joined, _ = await join_voice_to_user(broker, interaction.client, None, guild, interaction.user)
+    joined, state = await join_voice_to_user(broker, interaction.client, state, guild, interaction.user)
     if not joined and not guild.voice_client:
         await interaction.followup.send("❌ You must be in a voice channel for me to join and play music!")
         return state

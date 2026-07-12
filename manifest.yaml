@@ -19,3 +19,4 @@ dependencies:
     - discord.py[voice]==2.7.1
     - pydantic==2.8.2
     - yt-dlp==2026.6.9
+    - numpy==2.5.1
