@@ -2,54 +2,22 @@ from __future__ import annotations
 from asyncio import gather
 from discord import Guild, Client
 from .commands import InteractionCommand, MessageCommand, CallbackPostprocessing
-from ..base import Router
+from ..base import Router, DiscordGuildRouter
 from ..state_manager import GroupState
 from ...events import EventBroker, DiscordMessageEvent, DiscordGuildJoinEvent, DiscordInteractionEvent, DiscordCallabackEvent
 from ...state_types import PrefixState
 
 __all__ = ["DiscordCLIRouter", "DiscordCLIGuildRouter"]
 
+class DiscordCLIGuildRouter(DiscordGuildRouter):
+    async def new_router(self, guild: Guild) -> DiscordCLIRouter:
+        return DiscordCLIRouter(self.client, 
+                                guild, 
+                                self.broker, 
+                                self.group_state[DiscordCLIRouter.group_from_context(guild)]
+                               )
+
 class DiscordCLIRouter(Router):
-    def __init__(self, client: Client, broker: EventBroker, group_state: GroupState) -> None:
-        super().__init__(broker, group_state)
-        self._client = client
-        self._routers: list[DiscordCLIGuildRouter] = []
-
-    @classmethod
-    def group_from_context(cls) -> str:
-        return "ds_cli"
-
-    @property
-    def client(self) -> Client:
-        return self._client
-    
-    @property
-    def group_id(self) -> str:
-        return self.group_from_context()
-
-    async def start(self) -> None:
-        guilds = self.client.fetch_guilds()
-        await gather(*[self.add_guild(g) async for g in guilds])
-        event_key = DiscordGuildJoinEvent.key_from_context()
-        self._sub = self.broker.subscribe(event_key, self.on_guild_add)
-
-    async def on_guild_add(self, guild_event: DiscordGuildJoinEvent) -> None:
-        await self.add_guild(guild_event.payload)
-
-    async def add_guild(self, guild: Guild) -> None:
-        self._routers.append(DiscordCLIGuildRouter(self.client, 
-                                                   guild, 
-                                                   self.broker, 
-                                                   self.group_state[DiscordCLIGuildRouter.group_from_context(guild)]
-                                                   ))
-        await self._routers[-1].start()
-
-    async def stop(self) -> None:
-        self._sub.cancel()
-        await gather(*[r.stop() for r in self._routers])
-        self._routers = []
-
-class DiscordCLIGuildRouter(Router):
     def __init__(self, client: Client, guild: Guild, broker: EventBroker, group_state: GroupState) -> None:
         super().__init__(broker, group_state)
         self._guild = guild
