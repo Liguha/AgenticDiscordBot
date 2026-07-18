@@ -37,6 +37,7 @@ class EventBroker:
             try:
                 while self._running:
                     event = await self._queue.get()
+                    print(f"EVENT: {event.key}")
                     callbacks = self._subscribers.get(event.key, [])
                     for cb in callbacks:
                         task = create_task(cb(event))

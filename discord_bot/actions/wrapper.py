@@ -2,7 +2,7 @@ import inspect
 from typing import Any, Protocol, Concatenate, ClassVar, get_args
 from types import UnionType
 from collections.abc import Callable, Awaitable
-from pydantic import BaseModel
+from ..state_types import BaseState
 from discord import Client, User, Member
 from discord.abc import GuildChannel
 from ..events import EventBroker
@@ -19,7 +19,7 @@ def id_parser[RawId, DiscordType](func: Callable[[Client, RawId], Awaitable[Disc
     _ID_PARSERS_REGISTRY[target_type] = staticmethod(func)
     return func
 
-class Action[**ExtraArgs, ReturnType, StateType](Protocol):
+class Action[**ExtraArgs, ReturnType, StateType: BaseState](Protocol):
     ID_PARSERS_REGISTRY: ClassVar[dict[type, Callable[[Client, Any], Awaitable[Any]]]] = _ID_PARSERS_REGISTRY
 
     def __init__(self,
@@ -52,13 +52,13 @@ class Action[**ExtraArgs, ReturnType, StateType](Protocol):
             state_param = self._sig.parameters.get("state")
             if state_param is not None:
                 state_type = state_param.annotation
-                target_model: type[BaseModel] | None = None
+                target_model: type[BaseState] | None = None
                 if isinstance(state_type, UnionType) or hasattr(state_type, "__origin__"):
                     for t in get_args(state_type):
-                        if isinstance(t, type) and issubclass(t, BaseModel):
+                        if isinstance(t, type) and issubclass(t, BaseState):
                             target_model = t
                             break
-                elif isinstance(state_type, type) and issubclass(state_type, BaseModel):
+                elif isinstance(state_type, type) and issubclass(state_type, BaseState):
                     target_model = state_type
                 if target_model is not None:
                     state = target_model()

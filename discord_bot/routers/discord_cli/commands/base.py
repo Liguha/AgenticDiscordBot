@@ -1,19 +1,20 @@
 from __future__ import annotations
 import sys
-import inspect
 import shlex
+from inspect import signature, Parameter
 from collections.abc import Callable, Awaitable
 from typing import Any, Protocol, ClassVar, Concatenate, get_origin, get_args, Union
 from types import ModuleType, UnionType
 from functools import partial
 from discord import Message, Client, Interaction, app_commands
 from ....events import EventBroker
+from ....state_types import BaseState
 
 __all__ = ["MessageCommand", "InteractionCommand", "CallbackPostprocessing"]
 
 type ContextParser = Callable[[str, Client, Message], Any]
 
-class MessageCommand[StateType, **ExtraArgs](Protocol):
+class MessageCommand[StateType: StateType, **ExtraArgs](Protocol):
     COMMANDS: ClassVar[dict[str, MessageCommand]] = {}
 
     @classmethod
@@ -55,7 +56,7 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
         self._parsers: dict[str, ContextParser] = {}
         self.__class__.COMMANDS[command_name] = self
         self.__doc__ = sys.modules[func.__module__].__doc__
-        self.__signature__ = inspect.signature(func)
+        self.__signature__ = signature(func)
 
     @property
     def command_name(self) -> str:
@@ -67,7 +68,7 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
     
     def parse_arguments(self, client: Client, message: Message, args_line: str) -> dict[str, Any]:
         tokens = shlex.split(args_line)
-        target_params = list(inspect.signature(self).parameters.values())[4:]    # skip broker, client, msg and state
+        target_params = list(signature(self).parameters.values())[4:]    # skip broker, client, msg and state
         kwds: dict[str, Any] = {}
         NoneType = type(None)
         for i, param in enumerate(target_params):
@@ -102,7 +103,7 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
                             continue 
                 if not parsed:
                     kwds[param.name] = raw_token
-            elif param.default != inspect.Parameter.empty:
+            elif param.default != Parameter.empty:
                 kwds[param.name] = param.default
             else:
                 raise ValueError(f"Missing required argument: `{param.name}`")
@@ -110,10 +111,10 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
     
     @property
     def help(self) -> str:  # TODO: localization ??? 
-        target_params = list(inspect.signature(self).parameters.values())[4:]
+        target_params = list(signature(self).parameters.values())[4:]
         usage_elements = []
         for param in target_params:
-            if param.default == inspect.Parameter.empty:
+            if param.default == Parameter.empty:
                 usage_elements.append(f"<{param.name}>")
             else:
                 usage_elements.append(f"[{param.name}]")
@@ -129,8 +130,8 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
             return "\n".join(lines)
         for param in target_params:
             anno = param.annotation
-            type_name = getattr(anno, "__name__", str(anno)) if anno != inspect.Parameter.empty else "Any"
-            default_str = f" (default: {param.default!r})" if param.default != inspect.Parameter.empty else ""
+            type_name = getattr(anno, "__name__", str(anno)) if anno != Parameter.empty else "Any"
+            default_str = f" (default: {param.default!r})" if param.default != Parameter.empty else ""
             desc = self._descs.get(param.name, "No description provided.")
             lines.append(f"  {param.name} [{type_name}]{default_str}\n    └─ {desc}")
         return "\n".join(lines)
@@ -143,7 +144,7 @@ class MessageCommand[StateType, **ExtraArgs](Protocol):
         async with message.channel.typing():
             return await self._func(broker, client, message, state, *args, **kwds)
 
-class InteractionCommand[StateType, **ExtraArgs](Protocol):
+class InteractionCommand[StateType: BaseState, **ExtraArgs](Protocol):
     COMMANDS: ClassVar[dict[str, InteractionCommand]] = {}
     _INTERACTIONS_LIST: ClassVar[list[ModuleType, str, str]] = []
 
@@ -180,7 +181,7 @@ class InteractionCommand[StateType, **ExtraArgs](Protocol):
         self.__class__.COMMANDS[command_name] = self
         self.__class__._INTERACTIONS_LIST.append((self._func.__module__, self._func.__name__, command_name))
         self.__doc__ = sys.modules[func.__module__].__doc__
-        original_sig = inspect.signature(func)
+        original_sig = signature(func)
         cleared_params = [p for i, p in enumerate(original_sig.parameters.values()) if i not in [0, 2]]  # neither broker nor state
         self.__signature__ = original_sig.replace(parameters=cleared_params)
     

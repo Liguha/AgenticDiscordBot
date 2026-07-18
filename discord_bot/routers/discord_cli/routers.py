@@ -1,10 +1,9 @@
 from __future__ import annotations
-from asyncio import gather
 from discord import Guild, Client
 from .commands import InteractionCommand, MessageCommand, CallbackPostprocessing
 from ..base import Router, DiscordGuildRouter
 from ..state_manager import GroupState
-from ...events import EventBroker, DiscordMessageEvent, DiscordGuildJoinEvent, DiscordInteractionEvent, DiscordCallabackEvent
+from ...events import EventBroker, DiscordMessageEvent, DiscordInteractionEvent, DiscordCallabackEvent
 from ...state_types import PrefixState
 
 __all__ = ["DiscordCLIRouter", "DiscordCLIGuildRouter"]
