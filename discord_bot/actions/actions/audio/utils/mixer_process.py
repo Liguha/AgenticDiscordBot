@@ -45,30 +45,39 @@ class AudioMixerProcess(Process):
     def run(self) -> None:
         music_proc: Popen[bytes] | None = None
         aux_proc: Popen[bytes] | None = None
+        current_music_epoch: int = 0
+        current_aux_epoch: int = 0
         w: float = 0.0
         blank_frame: bytes = b"\x00" * PCM_FRAME_SIZE
-
         while True:
             # 1. Drain incoming configuration control commands
             while not self._cmd_queue.empty():
                 try:
-                    cmd, target, source, is_pipe = self._cmd_queue.get_nowait()
+                    cmd, target, source, is_pipe, epoch = self._cmd_queue.get_nowait()
                     if cmd == MixerCommand.PLAY:
                         if target == AudioTarget.MUSIC:
                             if music_proc: music_proc.kill()
+                            current_music_epoch = epoch
                             music_proc = self._spawn_decoder(source, is_pipe, self._music_stream_queue)
+                            self._clear_queue(self._output_queue)
                         elif target == AudioTarget.AUX:
                             if aux_proc: aux_proc.kill()
+                            current_aux_epoch = epoch
                             aux_proc = self._spawn_decoder(source, is_pipe, self._aux_stream_queue)
+                            self._clear_queue(self._output_queue)
                     elif cmd == MixerCommand.STOP:
                         if target == AudioTarget.MUSIC and music_proc:
                             music_proc.kill()
                             music_proc = None
+                            current_music_epoch = epoch
                             self._clear_queue(self._music_stream_queue)
+                            self._clear_queue(self._output_queue)
                         elif target == AudioTarget.AUX and aux_proc:
                             aux_proc.kill()
                             aux_proc = None
+                            current_aux_epoch = epoch
                             self._clear_queue(self._aux_stream_queue)
+                            self._clear_queue(self._output_queue)
                 except Empty:
                     break
             # 2. Collect audio frames from the active streams and Assess stream lifecycles
@@ -88,7 +97,7 @@ class AudioMixerProcess(Process):
                     aux_proc = None
                 else:
                     aux_active = True
-            # 5. Crossfade volume transition gains
+            # 3. Crossfade volume transition gains
             target_w = 1.0 if aux_active else 0.0
             if w < target_w:
                 w = min(target_w, w + FADE_SPEED)
@@ -107,43 +116,40 @@ class AudioMixerProcess(Process):
                 aux_vol = w * NORMAL_VOLUME
                 mixed_f32 = (m_arr * music_vol) + (a_arr * aux_vol)
                 mixed_bytes = np.clip(mixed_f32, CLIP_MIN, CLIP_MAX).astype(AUDIO_FORMAT_NP).tobytes()
-            # 4. Blocking write paces the entire process loop directly to Discord's sample consumption rate
-            self._output_queue.put((mixed_bytes, music_active, aux_active))
+            # 4. Write mixed frame and epoch telemetry flags to output queue
+            self._output_queue.put((mixed_bytes, music_active, current_music_epoch, aux_active, current_aux_epoch))
 
-    def read_mixed(self) -> tuple[bytes, bool, bool]:
+    def read_mixed(self) -> tuple[bytes, bool, int, bool, int]:
         """Pulls calculated audio matrices and telemetry flags from the output queue."""
         try:
             return self._output_queue.get_nowait()
         except Empty:
-            return (b"\x00" * PCM_FRAME_SIZE, False, False)
+            # Return epoch -1 to prevent queue starvation from triggering active epoch completion logic
+            return (b"\x00" * PCM_FRAME_SIZE, False, -1, False, -1)
 
-    def start_music(self, source: str | BufferedIOBase, *, is_pipe: bool = False) -> None:
+    def start_music(self, source: str | BufferedIOBase, *, is_pipe: bool = False, epoch: int = 0) -> None:
         """Pushes a track initialization directive down the command line pipeline."""
         is_str = isinstance(source, str)
         payload_source = source if (not is_pipe or is_str) else None
-        
-        self._cmd_queue.put_nowait((MixerCommand.PLAY, AudioTarget.MUSIC, payload_source, is_pipe))
-        
+        self._cmd_queue.put_nowait((MixerCommand.PLAY, AudioTarget.MUSIC, payload_source, is_pipe, epoch))
         if is_pipe and not is_str:
             self._spawn_parent_feeder_thread(source, self._music_stream_queue)
 
-    def stop_music(self) -> None:
+    def stop_music(self, epoch: int = 0) -> None:
         """Halts the primary music layer instantly."""
-        self._cmd_queue.put_nowait((MixerCommand.STOP, AudioTarget.MUSIC, None, False))
+        self._cmd_queue.put_nowait((MixerCommand.STOP, AudioTarget.MUSIC, None, False, epoch))
 
-    def start_aux(self, source: str | BufferedIOBase, *, is_pipe: bool = False) -> None:
+    def start_aux(self, source: str | BufferedIOBase, *, is_pipe: bool = False, epoch: int = 0) -> None:
         """Pushes an auxiliary override configuration directive down the pipeline."""
         is_str = isinstance(source, str)
         payload_source = source if (not is_pipe or is_str) else None
-        
-        self._cmd_queue.put_nowait((MixerCommand.PLAY, AudioTarget.AUX, payload_source, is_pipe))
-        
+        self._cmd_queue.put_nowait((MixerCommand.PLAY, AudioTarget.AUX, payload_source, is_pipe, epoch))
         if is_pipe and not is_str:
             self._spawn_parent_feeder_thread(source, self._aux_stream_queue)
 
-    def stop_aux(self) -> None:
+    def stop_aux(self, epoch: int = 0) -> None:
         """Halts the auxiliary track layer instantly."""
-        self._cmd_queue.put_nowait((MixerCommand.STOP, AudioTarget.AUX, None, False))
+        self._cmd_queue.put_nowait((MixerCommand.STOP, AudioTarget.AUX, None, False, epoch))
 
     def destroy(self) -> None:
         if self.is_alive():

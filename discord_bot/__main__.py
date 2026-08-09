@@ -25,6 +25,8 @@ async def main() -> None:
     # Discord section
     intents = Intents.default()
     intents.message_content = True
+    intents.voice_states = True
+    intents.members = True
     client = Client(intents=intents)
     await client.login(ds_token)
     await InteractionCommand.register_all(client)

@@ -50,4 +50,6 @@ class LLMContextState(BaseState):
     text_chat_ctx: ContextManager = Field(default_factory=init_context)
 
 from .routers.discord_agent.context_manager import ContextManager
+from .actions.actions.audio.utils import MuxPCMAudio
 LLMContextState.model_rebuild()
+AudioPlayerState.model_rebuild()

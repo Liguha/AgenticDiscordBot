@@ -58,8 +58,10 @@ class DiscordCLIRouter(Router):
                 await msg.reply(f"Command `{cmd}` doesn't exist.")
             return
         kwds = func.parse_arguments(self.client, msg, args)
-        state = self.group_state[func.group_id][...]
-        self.group_state[func.group_id][...] = await func(self.broker, self.client, msg, state, **kwds)
+        func_node = self.group_state[func.group_id]
+        async with func_node.lock():
+            state = func_node[...]
+            func_node[...] = await func(self.broker, self.client, msg, state, **kwds)
 
     async def route_interaction(self, interact_event: DiscordInteractionEvent) -> None:
         interaction = interact_event.payload
@@ -72,8 +74,10 @@ class DiscordCLIRouter(Router):
             await interaction.followup.send(f"Command `{name}` doesn't exist.")
             return
         kwds = {x["name"]: x["value"] for x in interaction.data.get("options", {})} # TODO: generalize rudimentary parser
-        state = self.group_state[func.group_id][...]
-        self.group_state[func.group_id][...] = await func.evaluate(self.broker, interaction, state, **kwds)
+        func_node = self.group_state[func.group_id]
+        async with func_node.lock():
+            state = func_node[...]
+            func_node[...] = await func.evaluate(self.broker, interaction, state, **kwds)
 
     async def route_callback(self, callback_event: DiscordCallabackEvent) -> None:
         func = CallbackPostprocessing.from_name(callback_event.name)

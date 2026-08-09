@@ -9,15 +9,21 @@ installers:
     pacman: ffmpeg
     dnf: ffmpeg
     yum: ffmpeg
+  deno: # TODO: verify this
+    apt: deno
+    pacman: deno
+    dnf: deno
+    yum: deno
 
 dependencies:
   - python=3.12
   - ffmpeg
+  - deno
   - pip:
     - python-dotenv==1.2.2
     - PyYAML==6.0.3
     - discord.py[voice]==2.7.1
     - pydantic==2.13.4
-    - yt-dlp==2026.6.9
+    - yt-dlp[default]==2026.6.9
     - numpy==2.5.1
     - openai==2.45.0

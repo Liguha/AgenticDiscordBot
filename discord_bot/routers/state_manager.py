@@ -2,11 +2,14 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from asyncio import create_task, sleep, CancelledError, Task
-from typing import Any, ClassVar, overload, NoReturn, TYPE_CHECKING
+from typing import Any, ClassVar, overload, NoReturn, Self, TYPE_CHECKING
 from types import EllipsisType, ModuleType
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from pathlib import Path
 from importlib import import_module
+from contextlib import asynccontextmanager
+from ..utils import AsyncRWLock
 from ..globals import RUNTIME_FOLDER
 
 if TYPE_CHECKING:
@@ -17,6 +20,34 @@ __all__ = ["GroupState", "StateManager"]
 DEFAULT_PATH = RUNTIME_FOLDER / "states.json"
 
 class GroupTreeProtocol(ABC):
+    @asynccontextmanager
+    async def lock(self, exclusive: bool = True) -> AsyncGenerator[Self, None]:
+        for ancestor_lock in self.ancestor_rwlocks:
+            await ancestor_lock.acquire_shared()
+        if exclusive:
+            await self.rwlock.acquire_exclusive()
+        else:
+            await self.rwlock.acquire_shared()
+        try:
+            yield self
+        finally:
+            if exclusive:
+                await self.rwlock.release_exclusive()
+            else:
+                await self.rwlock.release_shared()
+            for ancestor_lock in reversed(self.ancestor_rwlocks):
+                await ancestor_lock.release_shared()
+
+    @property
+    @abstractmethod
+    def rwlock(self) -> AsyncRWLock:
+        pass
+
+    @property
+    @abstractmethod
+    def ancestor_rwlocks(self) -> tuple[AsyncRWLock, ...]:
+        pass
+
     @abstractmethod
     def get_shared(self) -> BaseState | None:
         pass
@@ -51,8 +82,22 @@ class GroupTreeProtocol(ABC):
 class GroupState(GroupTreeProtocol):
     SHARED_KEY: ClassVar[str] = "shared"
     TYPE_KEY: ClassVar[str] = "dtype"
+    LOCK_KEY: ClassVar[str] = "__lock__"
 
     data: dict[str, dict | BaseState] = field(default_factory=dict)
+
+    locks: dict[str, dict | AsyncRWLock] = field(default_factory=dict, repr=False)
+    _ancestor_locks: tuple[AsyncRWLock, ...] = field(default=(), repr=False, compare=False)
+
+    @property
+    def rwlock(self) -> AsyncRWLock:
+        if self.LOCK_KEY not in self.locks:
+            self.locks[self.LOCK_KEY] = AsyncRWLock()
+        return self.locks[self.LOCK_KEY]
+
+    @property
+    def ancestor_rwlocks(self) -> tuple[AsyncRWLock, ...]:
+        return self._ancestor_locks
 
     @classmethod
     def deserialize(cls, serialized: dict[str, Any]) -> GroupState:
@@ -87,15 +132,14 @@ class GroupState(GroupTreeProtocol):
     
     def set_shared(self, data: BaseState | None = None) -> None:
         self.data[self.SHARED_KEY] = data
-    
+
     def get_subgroup(self, group_id: str) -> GroupState:
-        data = self.data.get(group_id)
-        if data is None:
-            data = {}
-            self.data[group_id] = data
-        if not isinstance(data, dict):
-            raise ValueError(f"Incorrect subgoup `{group_id}`.")
-        return GroupState(data)
+        sub_data = self.data.setdefault(group_id, {})
+        sub_locks = self.locks.setdefault(group_id, {})
+        if not isinstance(sub_data, dict):
+            raise ValueError(f"Incorrect subgroup `{group_id}`.")
+        next_ancestors = (*self._ancestor_locks, self.rwlock)
+        return GroupState(data=sub_data, locks=sub_locks, _ancestor_locks=next_ancestors)
 
 class StateManager(GroupTreeProtocol):
     def __init__(self, save_period: float, file_path: Path = DEFAULT_PATH) -> None:
@@ -110,6 +154,14 @@ class StateManager(GroupTreeProtocol):
 
     def __repr__(self) -> None:
         return f"StateManager(Period: {self._period}, Data: {self._storage})"
+
+    @property
+    def rwlock(self) -> AsyncRWLock:
+        return self.group_state.rwlock
+
+    @property
+    def ancestor_rwlocks(self) -> tuple[AsyncRWLock, ...]:
+        return self.group_state.ancestor_rwlocks
     
     @property
     def group_state(self) -> GroupState:

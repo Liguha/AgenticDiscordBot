@@ -1,5 +1,7 @@
 import yt_dlp
 import numpy as np
+from warnings import warn
+from .....globals import RUNTIME_FOLDER
 
 __all__ = [
     "HIGH_BITRATE_KBPS",
@@ -22,7 +24,8 @@ __all__ = [
     "YTDL_PLAYER_OPTIONS",
     "FFMPEG_OPTIONS",
     "YTDL_SEARCH",
-    "YTDL_PLAYER"
+    "YTDL_PLAYER",
+    "COOKIES_FILE"
 ]
 
 HIGH_BITRATE_KBPS: int = 64  
@@ -62,6 +65,7 @@ YTDL_SEARCH_OPTIONS: dict[str, str | bool | int] = {
     "source_address": "0.0.0.0",
     "extract_flat": "in_playlist",
     "process": False,
+    "remote_components": ["ejs:github"]
 }
 
 YTDL_PLAYER_OPTIONS: dict[str, str | bool | int] = {
@@ -74,7 +78,17 @@ YTDL_PLAYER_OPTIONS: dict[str, str | bool | int] = {
     "quiet": True,
     "no_warnings": True,
     "source_address": "0.0.0.0",
+    "remote_components": ["ejs:github"]
 }
+
+COOKIES_FILE = RUNTIME_FOLDER / "cookies.txt"
+
+if COOKIES_FILE.exists():
+    cookie_path = str(COOKIES_FILE.absolute())
+    YTDL_SEARCH_OPTIONS["cookiefile"] = cookie_path
+    YTDL_PLAYER_OPTIONS["cookiefile"] = cookie_path
+else:
+    warn(f"Can't find Cookies file ({COOKIES_FILE}) for YouTube, unauthorized session used. It may lead some issues.")
 
 FFMPEG_OPTIONS = {
     "before_options": (
