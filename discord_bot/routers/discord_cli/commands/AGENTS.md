@@ -1,18 +1,20 @@
-# Rules
-- One file - one pair of commands (`MessageCommand` and `InteractionCommand`).
-- Module (file) description is a command description.
-- `base.py` contains command base classes (`MessageCommand`, `InteractionCommand`, `CallbackPostprocessing`).
-- Explicitly pass `broker: EventBroker` as a parameter to all commands.
-- For state parameter: annotate with specific state type (e.g. `AudioPlayerState`, `PrefixState`) and return updated state. If command uses no state, annotate `state: None` and return/pass `None`.
+# CLI Commands Rules
 
-# Boilerplate
+## Rules
+- One file - one pair of commands (`MessageCommand` and `InteractionCommand`).
+- Module (file) docstring is the command description.
+- `base.py` contains command base classes (`MessageCommand`, `InteractionCommand`, `CallbackPostprocessing`).
+- Always pass `broker: EventBroker` explicitly.
+- For state parameter: annotate with specific state model type (e.g., `AudioPlayerState`, `PrefixState`) and return the updated state. If command uses no state, annotate `state: None` and return/pass `None`.
+
+## Boilerplate
 ```python
 """COMMAND DESCRIPTION HERE"""
 
 from discord import app_commands, Interaction, Message, Client
 from .base import MessageCommand, InteractionCommand
 from ....events import EventBroker
-from ....state_types import CustomState  # Or None if stateless
+from ....state_types import CustomState  # Use specific BaseState subclass or None
 
 __all__ = ["message_COMMAND_NAME", "interaction_COMMAND_NAME"]
 

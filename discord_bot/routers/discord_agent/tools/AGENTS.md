@@ -1,10 +1,12 @@
-# Rules
+# Agent Tools Rules
+
+## Rules
 - Docstrings are mandatory (used for LLM JSON schema autogeneration).
 - `Args` section in docstrings MUST NOT include service fields (`broker`, `client`, `guild`, `state`).
 - Always pass `broker: EventBroker` explicitly.
-- For state parameter: annotate with specific state model type (e.g. `AudioPlayerState`) or `None` if stateless, returning `tuple[ToolResult | ToolError, StateType]`.
+- State parameter: annotate with specific state model type (e.g. `AudioPlayerState`) or `None` if stateless, returning `tuple[ToolResult | ToolError, StateType]`.
 
-# Boilerplate
+## Boilerplate
 ```python
 from discord import Client, Guild
 from .base import ToolResult, ToolError, Tool
@@ -21,13 +23,12 @@ async def your_custom_tool(broker: EventBroker,
                            client: Client, 
                            guild: Guild, 
                            state: CustomState, 
-                           ...   # args with type annotations
+                           ...   # args with explicit Python 3.12 type annotations
                           ) -> tuple[YourCustomResult | ToolError, CustomState]:
     """Here docstrings for JSON schema autogen.
 
     Args:
         arg1: Single line description for argument.
-        ...
 
     Returns:
         Optional. Describe only result without state.
