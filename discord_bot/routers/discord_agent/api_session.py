@@ -48,6 +48,7 @@ class LLMSession[Scheme: BaseModel]:
         kwargs = {
             "model": self.model_id,
             "messages": api_messages,
+            "reasoning_effort": "minimal"
         }
         kwargs["tools"] = self.toolset.description
         if self.resposne_scheme:
@@ -61,12 +62,9 @@ class LLMSession[Scheme: BaseModel]:
             if response_message.tool_calls:
                 api_messages.append(response_message.model_dump(exclude_none=True))
                 for tool_call in response_message.tool_calls:
-                    print(f"TOOL CALL: {tool_call}")
                     tool_name = tool_call.function.name
                     tool_args = json.loads(tool_call.function.arguments) # validation ???
-                    print(f"TOOL ARGS: {tool_args}")
                     tool_output = await self.toolset.llm_call(tool_name, **tool_args)
-                    print(f"TOOL OUTPUT: {tool_output}")
                     api_messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,

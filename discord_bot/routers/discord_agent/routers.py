@@ -1,9 +1,8 @@
 from __future__ import annotations
-from discord import Guild, Client
+from discord import Guild, Client, Member
 from .tools import Toolset
-from .context_manager import ContextManager
 from .api_session import LLMSession
-from .config import TEXT_CHAT_MODEL
+from .config import TEXT_CHAT_MODEL, SYSTEM_PROMPT, PROVIDER_BASE_URL
 from ..base import Router, DiscordGuildRouter
 from ..state_manager import GroupState
 from ...events import EventBroker, DiscordMessageEvent, AgentToolEvent
@@ -29,7 +28,9 @@ class DiscordAgentRouter(Router):
         self._all_tools = Toolset(self.broker, self.client, self.guild)
         self._text_llm = LLMSession(self.contexts.text_chat_ctx,     # (weird) inplace state edit
                                     self._all_tools,
-                                    TEXT_CHAT_MODEL)    # TODO: add system prompt
+                                    TEXT_CHAT_MODEL,
+                                    PROVIDER_BASE_URL,
+                                    SYSTEM_PROMPT.format(name=client.user.name))    
 
     @property
     def contexts(self) -> LLMContextState:
@@ -61,18 +62,17 @@ class DiscordAgentRouter(Router):
                 msg.content.startswith(self.message_prefix) or
                 self.client.user.id not in [m.id for m in msg.mentions]):
             return
+        if isinstance(msg.author, Member):
+            self.guild._add_member(msg.author)
         user_name = msg.author.name
         user_id = msg.author.id
         content = msg.content
-        print(f"USER: {content}")
         async with msg.channel.typing():
             response = await self._text_llm.send_message(user_name, user_id, content)
-            print(f"LLM: {response}")
             await msg.reply(response)
 
     async def route_tool(self, tool_event: AgentToolEvent) -> None:
         payload = tool_event.payload
-        print(f"ROUTE TOOL: {payload}")
         gid = payload.tool.group_id
         state = self.group_state[gid][...]
         self.group_state[gid][...] = await self._all_tools.router_call(state, payload)
@@ -82,7 +82,6 @@ class DiscordAgentRouter(Router):
         tool_key = AgentToolEvent.key_from_context(self.guild)
         self._sub_msg = self.broker.subscribe(msg_key, self.route_message)
         self._sub_tool = self.broker.subscribe(tool_key, self.route_tool)
-        print(f"SUBSCRIBED WITH {tool_key}")
 
     async def stop(self) -> None:
         self._sub_msg.cancel()

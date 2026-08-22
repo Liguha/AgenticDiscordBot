@@ -6,7 +6,8 @@ from uuid import uuid4
 from inspect import signature, Parameter
 from asyncio import Future
 from dataclasses import dataclass
-from typing import Any, Awaitable, Concatenate, ClassVar, Literal, Protocol, get_args, get_origin
+from types import UnionType
+from typing import Any, Awaitable, Concatenate, ClassVar, Union, Literal, Protocol, get_args, get_origin
 from functools import partial, cached_property
 from collections.abc import Callable
 from discord import Client, Guild
@@ -23,11 +24,20 @@ PRIMITIVE_TYPE_MAP: dict[Any, dict[str, Any]] = {
     bool: {"type": "boolean"},
     dict: {"type": "object"},
     list: {"type": "array", "items": {}},
+    type(None): {"type": "null"},  # Supports nullable/Optional choices natively
 }
 
 def map_type(t: Any) -> dict[str, Any] | None:
     if t in PRIMITIVE_TYPE_MAP:
         return PRIMITIVE_TYPE_MAP[t].copy()
+    if isinstance(t, UnionType) or get_origin(t) is Union:
+        args = get_args(t)
+        valid_schemas = [s for arg in args if (s := map_type(arg)) is not None]
+        if valid_schemas:
+            if len(valid_schemas) == 1:
+                return valid_schemas[0]
+            return {"anyOf": valid_schemas}
+        return None
     origin = get_origin(t)
     if origin is not None:
         args = get_args(t)
@@ -55,7 +65,15 @@ def map_type(t: Any) -> dict[str, Any] | None:
             base_t = "string" if all(isinstance(v, str) for v in enum_vals) else "integer"
             return {"type": base_t, "enum": enum_vals}
         if issubclass(t, BaseModel):
-            return {"type": "object", "properties": t.model_json_schema().get("properties", {})}
+            schema = t.model_json_schema()
+            try:
+                properties = {
+                    name: {k: v for k, v in prop.items() if k not in ("title", "default")}
+                    for name, prop in schema.get("properties", {}).items()
+                }
+                return {"type": "object", "properties": properties, "required": schema.get("required", [])}
+            except AttributeError:
+                return {"type": "object", "properties": {}}
     return None
 
 class ToolResult(BaseModel):
@@ -68,6 +86,9 @@ class ToolError(BaseModel):
 
 class ToolErrorCodes(Enum):
     TOOL_NOT_FOUND = 0
+    RUNTIME_ERROR = 1
+    UNKNOWN_OPERATION = 2
+    INVALID_ARGUMENTS = 3
 
 class Tool[**ExtraArgs, ReturnType: ToolResult | ToolError, StateType: BaseState](Protocol):
     SERVICE_FIELDS: ClassVar[set[str]] = {"broker", "client", "guild", "state"}
@@ -222,7 +243,6 @@ class Toolset:
         future = loop.create_future()
         self._futures[uid] = future
         try:
-            print(f"PUBLISH: {AgentToolEvent(self.guild, AgentToolPayload(uid, tool, args, kwds))}")
             await self.broker.publish(AgentToolEvent(self.guild, AgentToolPayload(uid, tool, args, kwds)))
             result: ToolResult | ToolError = await future
             return result.model_dump()
@@ -232,8 +252,6 @@ class Toolset:
     async def router_call[StateType: BaseState](self, state: StateType, payload: AgentToolPayload) -> StateType:
         result, new_state = await payload.tool(self.broker, self.client, self.guild, state, *payload.args, **payload.kwds)
         future = self._futures.get(payload.call_id)
-        print("ROUTER CALL")
         if future and not future.done():
-            print(f"RESULT: {result}")
             future.set_result(result)
         return new_state

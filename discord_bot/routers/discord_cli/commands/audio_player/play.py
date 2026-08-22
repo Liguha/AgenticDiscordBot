@@ -11,7 +11,8 @@ from discord import app_commands, Interaction, Message, Client
 from ..base import MessageCommand, InteractionCommand, CallbackPostprocessing
 from .....actions import join_voice_to_user, search_audio, add_track, on_track_finished, TRACK_FINISHED_CALLBACK_NAME
 from .....events import EventBroker
-from .....state_types import AudioPlayerState, AudioSourceType
+from .....state_types import AudioPlayerState
+from .....return_types import AudioSourceType
 
 __all__ = ["message_play", "interaction_play", "callback_track_finished"]
 

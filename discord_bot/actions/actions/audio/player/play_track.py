@@ -4,7 +4,8 @@ from discord import Client, Guild, VoiceClient
 from ..utils import YTDL_PLAYER
 from ....wrapper import Action
 from .....events import EventBroker
-from .....state_types import AudioPlayerState, AudioTrack
+from .....state_types import AudioPlayerState
+from .....return_types import AudioTrack
 from .....utils import run_in_executor
 from .....events import DiscordCallabackEvent
 

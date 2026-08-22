@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Literal, TYPE_CHECKING
+from typing import TYPE_CHECKING
+from .return_types import AudioTrack
 if TYPE_CHECKING:
     from .actions.actions.audio.utils import MuxPCMAudio
     from .routers.discord_agent.context_manager import ContextManager
@@ -8,8 +9,6 @@ if TYPE_CHECKING:
 __all__ = [
     "BaseState",
     "PrefixState",
-    "AudioSourceType",
-    "AudioTrack", 
     "AudioPlayerState",
     "LLMContextState"
 ]
@@ -26,13 +25,6 @@ class BaseState(BaseModel):
 class PrefixState(BaseState):
     prefix: str = ">"
 
-AudioSourceType = Literal["youtube", "soundcloud"]
-
-class AudioTrack(BaseModel):
-    title: str
-    url: str
-    duration: float
-    source_type: AudioSourceType
 
 @no_serialization
 class AudioPlayerState(BaseState):

@@ -3,9 +3,13 @@ from discord import Client, Guild, VoiceClient
 from .play_track import play_next_track
 from ....wrapper import Action
 from .....events import EventBroker
-from .....state_types import AudioPlayerState, AudioTrack
+from .....state_types import AudioPlayerState
+from .....return_types import AudioTrack
 
-__all__ = ["add_track", "skip_track", "remove_range", "toggle_loop"]
+__all__ = [
+    "add_track", "add_tracks_many", "skip_track", "remove_range",
+    "remove_by_indices", "remove_by_title", "move_track", "toggle_loop"
+]
 
 @Action
 async def add_track(broker: EventBroker, client: Client, state: AudioPlayerState, guild: Guild, track: AudioTrack) -> tuple[None, AudioPlayerState]:
@@ -15,6 +19,47 @@ async def add_track(broker: EventBroker, client: Client, state: AudioPlayerState
     if not state.is_playing:
         _, new_state = await play_next_track._func(broker, client, new_state, guild)
     return None, new_state
+
+@Action
+async def add_tracks_many(broker: EventBroker, client: Client, state: AudioPlayerState, guild: Guild, tracks: list[AudioTrack], position: int | None = None) -> tuple[list[AudioTrack], AudioPlayerState]:
+    updated_queue: list[AudioTrack] = list(state.queue)
+    new_tracks: list[AudioTrack] = list(tracks)
+    if position is None:
+        updated_queue.extend(new_tracks)
+    else:
+        bound: int = max(0, min(position, len(updated_queue)))
+        updated_queue[bound:bound] = new_tracks
+    new_state: AudioPlayerState = state.model_copy(update={"queue": updated_queue})
+    if not state.is_playing:
+        _, new_state = await play_next_track._func(broker, client, new_state, guild)
+    return new_tracks, new_state
+
+@Action
+async def remove_by_indices(broker: EventBroker, client: Client, state: AudioPlayerState, indices: list[int]) -> tuple[list[AudioTrack], AudioPlayerState]:
+    updated_queue: list[AudioTrack] = list(state.queue)
+    removed: list[AudioTrack] = []
+    for idx in sorted({i for i in indices if 0 <= i < len(updated_queue)}, reverse=True):
+        removed.append(updated_queue.pop(idx))
+    return removed, state.model_copy(update={"queue": updated_queue})
+
+@Action
+async def remove_by_title(broker: EventBroker, client: Client, state: AudioPlayerState, patterns: list[str]) -> tuple[list[AudioTrack], AudioPlayerState]:
+    needles: list[str] = [p.strip().lower() for p in patterns if p and p.strip()]
+    def matches(track: AudioTrack) -> bool:
+        title: str = track.title.lower()
+        return any(n in title for n in needles)
+    updated_queue: list[AudioTrack] = [t for t in state.queue if not matches(t)]
+    removed: list[AudioTrack] = [t for t in state.queue if matches(t)]
+    return removed, state.model_copy(update={"queue": updated_queue})
+
+@Action
+async def move_track(broker: EventBroker, client: Client, state: AudioPlayerState, from_idx: int, to_idx: int) -> tuple[bool, AudioPlayerState]:
+    updated_queue: list[AudioTrack] = list(state.queue)
+    if not (0 <= from_idx < len(updated_queue) and 0 <= to_idx < len(updated_queue)):
+        return False, state
+    track: AudioTrack = updated_queue.pop(from_idx)
+    updated_queue.insert(to_idx, track)
+    return True, state.model_copy(update={"queue": updated_queue})
 
 @Action
 async def skip_track(broker: EventBroker, client: Client, state: AudioPlayerState, guild: Guild) -> tuple[bool, AudioPlayerState]:

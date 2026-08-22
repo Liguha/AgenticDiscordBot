@@ -2,7 +2,7 @@ from discord import Client
 from ..utils import YTDL_SEARCH
 from ....wrapper import Action
 from .....events import EventBroker
-from .....state_types import AudioSourceType, AudioTrack
+from .....return_types import AudioSourceType, AudioTrack
 from .....utils import run_in_executor
 
 __all__ = ["search_audio"]
