@@ -5,6 +5,7 @@
 - `Args` section in docstrings MUST NOT include service fields (`broker`, `client`, `guild`, `state`).
 - Always pass `broker: EventBroker` explicitly.
 - State parameter: annotate with specific state model type (e.g. `AudioPlayerState`) or `None` if stateless, returning `tuple[ToolResult | ToolError, StateType]`.
+- **Minimize token consumption**: tool schemas, docstrings, and result payloads are all billed as LLM context, so keep them lean. Only include fields the caller genuinely needs — drop redundant echoes (e.g. the query the agent already knows, a separate "answer"/"top_link" when the answer is derivable from `results`). Prefer `str`/`int` primitives and compact model shapes over deeply nested or duplicated data. If a field adds no new information for the agent, remove it rather than tolerating waste.
 
 ## Boilerplate
 ```python

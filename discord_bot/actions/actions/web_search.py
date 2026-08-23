@@ -1,119 +1,107 @@
-from urllib.parse import urlparse, parse_qs, unquote, quote_plus
-from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
+import os
 import re
-from html import unescape
-from html.parser import HTMLParser
+from typing import Literal
+from exa_py import Exa
+from exa_py.api import Result
 from discord import Client
 from ..wrapper import Action
 from ...events import EventBroker
 from ...return_types import WebSearchResult
 from ...utils import run_in_executor
 
-__all__ = ["search_web"]
+__all__ = ["search_web", "SearchMode", "SearchType"]
 
-DDG_LITE_URL: str = "https://lite.duckduckgo.com/lite/?q="
-DDG_TIMEOUT: float = 15.0
-PAGE_TIMEOUT: float = 15.0
-USER_AGENT: str = "Mozilla/5.0"
-PAGE_READ_LIMIT: int = 1_000_000
-CONTENT_MAX_LEN: int = 2500
-CONTENT_SEGMENTS: int = 6
-MIN_SEGMENT_LEN: int = 12
+type SearchMode = Literal["highlights", "hybrid"]
+type SearchType = Literal["instant", "fast", "auto"]
 
-_RESULT_ANCHOR = re.compile(r"<a rel=\"nofollow\" href=\"([^\"]+)\" class='result-link'>(.*?)</a>", re.S)
-_RESULT_SNIPPET = re.compile(r"<td class='result-snippet'>(.*?)</td>", re.S)
-_TAG_RE = re.compile(r"<[^>]+>")
-_BOILERPLATE = re.compile(r"subscribe|newsletter|copyright|all rights reserved|follow us|share this|skip to|cookie policy", re.I)
+DEFAULT_MODE: SearchMode = "highlights"
+DEFAULT_TYPE: SearchType = "auto"
+MAX_NUM_RESULTS: int = 8
+DEFAULT_NUM_RESULTS: int = 3
+CONTENT_MAX_LEN: int = 500
 
+_EXA: Exa | None = None
 
-def _clean_text(raw: str) -> str:
-    return unescape(_TAG_RE.sub("", raw)).strip()
+def _clamp_num_results(n: int) -> int:
+    return max(1, min(n, MAX_NUM_RESULTS))
 
+def _exa() -> Exa:
+    global _EXA
+    if _EXA is None:
+        key = os.getenv("EXA_API_KEY")
+        if not key:
+            raise RuntimeError("Exa API key missing: set EXA_API_KEY in .env")
+        _EXA = Exa(api_key=key)
+    return _EXA
 
-def _decode_link(fragment: str) -> str:
-    query: list[str] = parse_qs(urlparse(fragment).query).get("uddg", [])
-    return unquote(query[0]) if query else fragment
+def _shorten(text: str, max_chars: int) -> str:
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = re.sub(r"\s*\.\.\.\s*", " ", re.sub(r"\s+", " ", raw_line.strip()))
+        if line:
+            lines.append(line)
+    out = "\n".join(lines)
+    if len(out) > max_chars:
+        out = out[:max_chars].rstrip()
+        if not out.endswith(("…", ".", "!", "?")):
+            out += "…"
+    return out
 
+def _excerpt_of(result: Result, max_chars: int) -> str:
+    raw = " ".join(result.highlights or []).strip() if result.highlights else (result.text or "")
+    return _shorten(raw, max_chars)
 
-class _ParagraphExtractor(HTMLParser):
-    """Collects plain text of <p> segments in document order."""
+def _summary_of(result: Result, max_chars: int) -> str:
+    raw = result.summary or result.text or ""
+    return _shorten(raw, max_chars)
 
-    def __init__(self) -> None:
-        super().__init__()
-        self._depth: int = 0
-        self._buf: list[str] = []
-        self.segments: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag == "p":
-            self._depth += 1
-        elif tag == "br":
-            self._buf.append(" ")
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag == "p":
-            self._depth -= 1
-            if self._depth == 0:
-                text: str = re.sub(r"\s+", " ", "".join(self._buf)).strip()
-                self._buf = []
-                if text:
-                    self.segments.append(text)
-
-    def handle_data(self, data: str) -> None:
-        if self._depth > 0:
-            self._buf.append(data)
-
-
-def _extract_content(html: str) -> str:
-    parser = _ParagraphExtractor()
-    parser.feed(html)
-    segments: list[str] = []
-    for segment in parser.segments:
-        if _BOILERPLATE.search(segment):
-            continue
-        if len(segment) < MIN_SEGMENT_LEN:
-            continue
-        segments.append(segment)
-    return "\n".join(segments[:CONTENT_SEGMENTS])[:CONTENT_MAX_LEN]
-
-
-def _fetch_page_content(url: str) -> str:
-    try:
-        request = Request(url, headers={"User-Agent": USER_AGENT})
-        with urlopen(request, timeout=PAGE_TIMEOUT) as response:
-            html: str = response.read(PAGE_READ_LIMIT).decode("utf-8", "ignore")
-    except (HTTPError, URLError, TimeoutError, OSError, ValueError):
-        return ""
-    return _extract_content(html)
-
-
-@run_in_executor
-def _search_full(query: str, limit: int) -> list[WebSearchResult]:
-    request = Request(DDG_LITE_URL + quote_plus(query), headers={"User-Agent": USER_AGENT})
-    try:
-        with urlopen(request, timeout=DDG_TIMEOUT) as response:
-            body: str = response.read().decode("utf-8", "ignore")
-    except (HTTPError, URLError, TimeoutError, OSError):
-        return []
-    anchors = list(_RESULT_ANCHOR.finditer(body))[:limit]
+def _build_results(query: str, limit: int, mode: SearchMode, search_type: SearchType) -> list[WebSearchResult]:
+    n = _clamp_num_results(limit)
+    exa = _exa()
+    res = exa.search(
+        query,
+        type=search_type,
+        num_results=n,
+        contents={"highlights": True, "max_age_hours": -1},
+    )
     results: list[WebSearchResult] = []
-    for i, match in enumerate(anchors):
-        window_end = anchors[i + 1].start() if i + 1 < len(anchors) else len(body)
-        window: str = body[match.end():window_end]
-        snippet = _RESULT_SNIPPET.search(window)
+    for idx, item in enumerate(res.results or []):
+        if mode == "hybrid" and idx == 0:
+            contents = exa.get_contents([item.url], summary={"query": query}, max_age_hours=-1)
+            best = contents.results[0] if contents.results else item
+            content = _summary_of(best, CONTENT_MAX_LEN)
+        else:
+            content = _excerpt_of(item, CONTENT_MAX_LEN)
         results.append(WebSearchResult(
-            title=_clean_text(match.group(2)),
-            link=_decode_link(match.group(1)),
-            summary=_clean_text(snippet.group(1)) if snippet else None,
-            content=""
+            title=item.title or "",
+            link=item.url or "",
+            content=content,
         ))
-    if results:
-        results[0].content = _fetch_page_content(results[0].link)
     return results
 
+@run_in_executor
+def _build_results_async(query: str, limit: int, mode: SearchMode, search_type: SearchType) -> list[WebSearchResult]:
+    return _build_results(query, limit, mode, search_type)
 
 @Action
-async def search_web(broker: EventBroker, client: Client, state: None, query: str, limit: int = 3) -> tuple[list[WebSearchResult] | None, None]:
-    results = await _search_full(query, max(1, limit))
+async def search_web(broker: EventBroker,
+                     client: Client,
+                     state: None,
+                     query: str,
+                     limit: int = DEFAULT_NUM_RESULTS,
+                     mode: SearchMode = DEFAULT_MODE,
+                     search_type: SearchType = DEFAULT_TYPE
+                    ) -> tuple[list[WebSearchResult] | None, None]:
+    """Search the web via Exa and return ranked results with content excerpts.
+
+    `mode` selects the result shaping: "highlights" (fast, every result a raw
+    excerpt) or "hybrid" (slower, the top result summarized via an extra
+    `/contents` call, the rest excerpts). `search_type` picks the Exa search
+    type; only "instant" | "fast" | "auto" are allowed. `limit` is capped below
+    10 to keep the flat base cost.
+    """
+    try:
+        results = await _build_results_async(query, limit, mode, search_type)
+    except Exception:
+        return None, None
     return results or None, None

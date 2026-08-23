@@ -20,4 +20,3 @@ class WebSearchResult(BaseModel):
     title: str
     link: str
     content: str
-    summary: str | None = None
