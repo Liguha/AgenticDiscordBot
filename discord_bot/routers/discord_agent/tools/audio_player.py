@@ -1,7 +1,6 @@
 import asyncio
-from typing import Literal
 from discord import Client, Guild
-from pydantic import BaseModel, Field
+from pydantic import Field
 from .base import ToolResult, ToolError, Tool, ToolErrorCodes
 from ....events import EventBroker
 from ....state_types import AudioPlayerState
@@ -10,17 +9,17 @@ from ....actions import (
     join_voice_to_user,
     search_audio,
     add_tracks_many,
-    remove_by_indices,
-    remove_by_title,
-    move_track,
     skip_track,
-    toggle_loop
+    toggle_loop,
+    play_next_track
 )
 
 __all__ = [
     "PlayerStatusResult", "get_audio_player_status",
     "AddTracksResult", "audio_player_add_tracks",
-    "QueueEditOp", "EditQueueResult", "audio_player_edit_queue"
+    "SkipResult", "audio_player_skip",
+    "RemoveResult", "audio_player_remove",
+    "ToggleLoopResult", "audio_player_toggle_loop"
 ]
 
 GROUP_ID: str = "audio"
@@ -67,7 +66,6 @@ async def get_audio_player_status(broker: EventBroker, client: Client, guild: Gu
 class AddTracksResult(ToolResult):
     added: list[TrackMeta] = Field(description="Metadata of successfully queued tracks.")
     failed_queries: list[str] = Field(description="Queries that produced no results.")
-    position: int | None = Field(description="Insert offset used for the added batch.")
 
 
 @Tool.with_group(GROUP_ID)
@@ -77,19 +75,17 @@ async def audio_player_add_tracks(broker: EventBroker,
                                   state: AudioPlayerState,
                                   queries: list[str],
                                   requesting_user_id: str,
-                                  platform: AudioSourceType = "youtube",
-                                  position: int | None = None
+                                  platform: AudioSourceType = "youtube"
                                  ) -> tuple[AddTracksResult | ToolError, AudioPlayerState]:
     """Search several queries and enqueue all matching tracks in a single call.
 
     Joins the requesting user's voice channel once, then resolves every query and
-    adds the top result of each to the queue. Optionally inserts at a queue offset.
+    adds the top result of each to the upcoming queue.
 
     Args:
         queries: One or more track titles, keywords, or URLs to search and queue.
         requesting_user_id: Discord Snowflake ID of the user issuing the request.
         platform: The streaming platform to search on.
-        position: Optional 0-based queue position to insert all added tracks.
 
     Returns:
         List of queued track metadata plus any queries that failed to match.
@@ -119,81 +115,108 @@ async def audio_player_add_tracks(broker: EventBroker,
             else:
                 failed_queries.append(query)
         if tracks:
-            _, state = await add_tracks_many(broker, client, state, guild, tracks, position)
+            _, state = await add_tracks_many(broker, client, state, guild, tracks)
             added = [_track_meta(t) for t in tracks]
-    return AddTracksResult(added=added, failed_queries=failed_queries, position=position), state
+    return AddTracksResult(added=added, failed_queries=failed_queries), state
 
 
-class QueueEditOp(BaseModel):
-    operation: Literal["remove_by_index", "remove_by_title", "move", "skip", "clear", "set_loop", "toggle_loop"]
-    indices: list[int] = Field(default_factory=list, description="0-based queue positions for remove_by_index.")
-    patterns: list[str] = Field(default_factory=list, description="Case-insensitive title substrings for remove_by_title.")
-    from_index: int | None = Field(default=None, description="Source position for move.")
-    to_index: int | None = Field(default=None, description="Target position for move.")
-    loop_enabled: bool | None = Field(default=None, description="Loop state for set_loop.")
-
-
-class QueueEditReport(BaseModel):
-    operation: str = Field(description="The executed queue operation identifier.")
-    ok: bool = Field(description="Whether the operation succeeded.")
-    removed_titles: list[str] | None = Field(default=None, description="Titles removed by remove operations.")
-    is_looping: bool | None = Field(default=None, description="Loop state after a loop operation.")
-    error: str | None = Field(default=None, description="Error detail when the operation failed.")
-
-
-class EditQueueResult(ToolResult):
-    results: list[QueueEditReport] = Field(description="Per-operation outcomes in execution order.")
+class SkipResult(ToolResult):
+    skipped: TrackMeta | None = Field(description="The current track that was skipped, or null.")
+    next_track: TrackMeta | None = Field(description="The track now playing, or null if fully stopped.")
 
 
 @Tool.with_group(GROUP_ID)
-async def audio_player_edit_queue(broker: EventBroker,
-                                  client: Client,
-                                  guild: Guild,
-                                  state: AudioPlayerState,
-                                  ops: list[QueueEditOp]
-                                 ) -> tuple[EditQueueResult | ToolError, AudioPlayerState]:
-    """Apply a batch of queue edits in order.
+async def audio_player_skip(broker: EventBroker,
+                            client: Client,
+                            guild: Guild,
+                            state: AudioPlayerState
+                           ) -> tuple[SkipResult | ToolError, AudioPlayerState]:
+    """Skip the current track and advance to the next.
 
-    Each operation yields a report entry; later operations see the result of the
-    preceding ones. 0-based positions refer to the state of the queue at the moment
-    that specific operation runs.
-
-    Args:
-        ops: Ordered list of queue operations to execute.
+    With loop mode enabled the skipped track is re-queued to the end and is NOT
+    removed from rotation.
 
     Returns:
-        A per-operation success report.
+        The skipped track and the track now playing.
     """
     if state is None:
         state = AudioPlayerState()
-    reports: list[QueueEditReport] = []
-    for op in ops:
-        name = op.operation
-        try:
-            if name == "remove_by_index":
-                removed, state = await remove_by_indices(broker, client, state, op.indices)
-                reports.append(QueueEditReport(operation=name, ok=True, removed_titles=[r.title for r in removed]))
-            elif name == "remove_by_title":
-                removed, _ = await remove_by_title(broker, client, state, op.patterns)
-                reports.append(QueueEditReport(operation=name, ok=True, removed_titles=[r.title for r in removed]))
-            elif name == "move":
-                ok, state = await move_track(broker, client, state, op.from_index, op.to_index)
-                reports.append(QueueEditReport(operation=name, ok=bool(ok)))
-            elif name == "skip":
-                ok, state = await skip_track(broker, client, state, guild)
-                reports.append(QueueEditReport(operation=name, ok=bool(ok)))
-            elif name == "clear":
-                state = state.model_copy(update={"queue": []})
-                reports.append(QueueEditReport(operation=name, ok=True))
-            elif name == "set_loop":
-                if state.is_looping != op.loop_enabled:
-                    state = state.model_copy(update={"is_looping": bool(op.loop_enabled)})
-                reports.append(QueueEditReport(operation=name, ok=True, is_looping=bool(state.is_looping)))
-            elif name == "toggle_loop":
-                loop_status, state = await toggle_loop(broker, client, state)
-                reports.append(QueueEditReport(operation=name, ok=True, is_looping=loop_status))
-            else:
-                reports.append(QueueEditReport(operation=name, ok=False, error="Unsupported operation."))
-        except Exception as e:
-            reports.append(QueueEditReport(operation=name, ok=False, error=str(e)))
-    return EditQueueResult(results=reports), state
+    skipped = _track_meta(state.current_track) if state.current_track else None
+    ok, new_state = await skip_track(broker, client, state, guild)
+    if not ok:
+        return ToolError(
+            error_code=ToolErrorCodes.RUNTIME_ERROR.name,
+            message="Cannot skip: no active voice playback in this guild."
+        ), state
+    next_track = _track_meta(new_state.current_track) if new_state.current_track else None
+    return SkipResult(skipped=skipped, next_track=next_track), new_state
+
+
+class RemoveResult(ToolResult):
+    removed: list[TrackMeta] = Field(description="Upcoming tracks removed from the queue.")
+    skipped_current: TrackMeta | None = Field(description="The current track skipped and dropped when index 0 was requested.")
+
+
+@Tool.with_group(GROUP_ID)
+async def audio_player_remove(broker: EventBroker,
+                              client: Client,
+                              guild: Guild,
+                              state: AudioPlayerState,
+                              indices: list[int]
+                             ) -> tuple[RemoveResult | ToolError, AudioPlayerState]:
+    """Remove tracks from the player queue.
+
+    The queue is 1-indexed: index 1 is the next upcoming track. Requesting index 0
+    skips and drops the current track (removed even when loop mode is on).
+
+    Args:
+        indices: 1-based queue positions to remove; 0 removes the current track.
+
+    Returns:
+        The removed tracks and the current track if it was dropped.
+    """
+    if state is None:
+        state = AudioPlayerState()
+    index_set: set[int] = set(indices)
+    dropped_current = 0 in index_set
+    removed: list[TrackMeta] = []
+    kept: list[AudioTrack] = []
+    for i, track in enumerate(state.queue, start=1):
+        if i in index_set:
+            removed.append(_track_meta(track))
+        else:
+            kept.append(track)
+    new_state: AudioPlayerState = state.model_copy(update={"queue": kept})
+    if not dropped_current:
+        return RemoveResult(removed=removed, skipped_current=None), new_state
+    skipped_current = _track_meta(new_state.current_track) if new_state.current_track else None
+    if new_state.mixer is None or guild.voice_client is None:
+        new_state = new_state.model_copy(update={"is_playing": False, "current_track": None, "is_looping": False})
+    else:
+        new_state.mixer.stop_music()
+        reset_state = new_state.model_copy(update={"is_playing": False, "current_track": None, "is_looping": False})
+        _, new_state = await play_next_track(broker, client, reset_state, guild)
+    return RemoveResult(removed=removed, skipped_current=skipped_current), new_state
+
+
+class ToggleLoopResult(ToolResult):
+    is_looping: bool = Field(description="Loop mode state after toggling.")
+
+
+@Tool.with_group(GROUP_ID)
+async def audio_player_toggle_loop(broker: EventBroker,
+                                   client: Client,
+                                   guild: Guild,
+                                   state: AudioPlayerState
+                                  ) -> tuple[ToggleLoopResult | ToolError, AudioPlayerState]:
+    """Toggle queue loop mode on/off.
+
+    With loop mode on, finished or skipped tracks are re-queued.
+
+    Returns:
+        The new loop mode state.
+    """
+    if state is None:
+        state = AudioPlayerState()
+    is_looping, new_state = await toggle_loop(broker, client, state)
+    return ToggleLoopResult(is_looping=is_looping), new_state
