@@ -203,7 +203,7 @@ class Tool[**ExtraArgs, ReturnType: ToolResult | ToolError, StateType: BaseState
         }
 
     def __getattr__(self, name: str) -> Any:
-        # little hack to make object compatible with discord.py
+        # little hack to make object compatible with the discord library
         return getattr(self._func, name)
     
     async def __call__(self, 

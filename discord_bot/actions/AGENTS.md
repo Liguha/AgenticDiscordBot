@@ -1,5 +1,8 @@
 # Actions Subsystem Rules
 
+## Dialect: Wrapper instances, not functions
+`@Action` immediately wraps the raw function into an `Action` instance at import time (the module-level name is an instance, not a function). Dispatch happens through `Action.__call__`, which binds `broker, client, state` and auto-resolves ID arguments via the id-parser registry before invoking the wrapped function. This is the same "decorator class" dialect used by `MessageCommand`/`InteractionCommand`/`Tool` — see root `AGENTS.md` → "The Decorator Class Dialect".
+
 ## Rules for Actions
 1. **Decoration**: Always decorate core action functions with `@Action`.
 2. **Signature Standard**:

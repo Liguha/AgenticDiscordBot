@@ -1,8 +1,8 @@
 """Command to remove a track or a range of tracks from the playback queue using 1-based indexing."""
 
-from discord import app_commands, Interaction, Message, Client
+from discord import Interaction, Message, Client
 from .config import GROUP_ID
-from ..base import MessageCommand, InteractionCommand
+from ..base import InteractionCommand, MessageCommand
 from .....actions import remove_range
 from .....events import EventBroker
 from .....state_types import AudioPlayerState
@@ -26,7 +26,7 @@ async def message_remove(broker: EventBroker, client: Client, message: Message, 
         await message.reply("❌ Invalid track positions specified or queue is empty.")
     return new_state
 
-@app_commands.describe(**ARGS_DESC)
+@InteractionCommand.add_descriptions(**ARGS_DESC)
 @InteractionCommand.with_name("remove", group_id=GROUP_ID)
 async def interaction_remove(broker: EventBroker, interaction: Interaction, state: AudioPlayerState, start_pos: int, end_pos: int | None = None) -> AudioPlayerState:
     start_idx = start_pos - 1

@@ -1,7 +1,7 @@
 """Configure the command prefix for text-based message commands."""
 
-from discord import app_commands, Interaction, Message, Client
-from .base import MessageCommand, InteractionCommand
+from discord import Interaction, Message, Client
+from .base import InteractionCommand, MessageCommand
 from ....events import EventBroker
 from ....state_types import PrefixState
 
@@ -18,7 +18,7 @@ async def message_prefix(broker: EventBroker, client: Client, message: Message, 
     await message.reply(f"New prefix is now: `{new_prefix}`")
     return new_state
 
-@app_commands.describe(**ARGS_DESC)
+@InteractionCommand.add_descriptions(**ARGS_DESC)
 @InteractionCommand.with_name("prefix")
 async def interaction_prefix(broker: EventBroker, interaction: Interaction, state: PrefixState, new_prefix: str) -> PrefixState:
     new_state = state.model_copy(update={"prefix": new_prefix})

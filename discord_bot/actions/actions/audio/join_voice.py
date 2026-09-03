@@ -1,4 +1,5 @@
-from discord import Client, Guild, VoiceChannel, User, VoiceClient, Member
+from discord import Client, Guild, Member, User, VoiceChannel
+from discord.voice import VoiceClient
 from ...wrapper import Action
 from ....events import EventBroker
 from ....state_types import AudioPlayerState

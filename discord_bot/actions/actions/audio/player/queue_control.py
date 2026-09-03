@@ -1,5 +1,6 @@
 from typing import Optional
-from discord import Client, Guild, VoiceClient
+from discord import Client, Guild
+from discord.voice import VoiceClient
 from .play_track import play_next_track
 from ....wrapper import Action
 from .....events import EventBroker

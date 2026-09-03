@@ -1,5 +1,8 @@
 # Agent Tools Rules
 
+## Dialect: Wrapper instances, not functions
+`@Tool` / `@Tool.with_group(...)` immediately turns the raw function into a `Tool` instance at import time; the module-level `*_tool` name is an instance registered in `Tool.TOOLS`. The LLM-facing JSON schema is generated from the function signature + docstring (`description`). This is the same "decorator class" dialect used by `Action`/`MessageCommand`/`InteractionCommand` — see root `AGENTS.md` → "The Decorator Class Dialect".
+
 ## Rules
 - Docstrings are mandatory (used for LLM JSON schema autogeneration).
 - `Args` section in docstrings MUST NOT include service fields (`broker`, `client`, `guild`, `state`).

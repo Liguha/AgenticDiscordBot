@@ -1,6 +1,7 @@
 import asyncio
 from typing import Any
-from discord import Client, Guild, VoiceClient
+from discord import Client, Guild
+from discord.voice import VoiceClient
 from ..utils import YTDL_PLAYER
 from ....wrapper import Action
 from .....events import EventBroker

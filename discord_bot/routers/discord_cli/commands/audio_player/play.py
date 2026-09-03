@@ -7,8 +7,8 @@ from typing import Any, Callable, get_args
 from functools import lru_cache
 from argparse import ArgumentParser
 from .config import GROUP_ID
-from discord import app_commands, Interaction, Message, Client
-from ..base import MessageCommand, InteractionCommand, CallbackPostprocessing
+from discord import Interaction, Message, Client
+from ..base import CallbackPostprocessing, InteractionCommand, MessageCommand
 from .....actions import join_voice_to_user, search_audio, add_track, on_track_finished, TRACK_FINISHED_CALLBACK_NAME
 from .....events import EventBroker
 from .....state_types import AudioPlayerState
@@ -127,7 +127,7 @@ async def message_play(broker: EventBroker,
     return new_state
 
 
-@app_commands.describe(**ARGS_DESC)
+@InteractionCommand.add_descriptions(**ARGS_DESC)
 @InteractionCommand.with_name("play", group_id=GROUP_ID)
 async def interaction_play(broker: EventBroker,
                            interaction: Interaction,

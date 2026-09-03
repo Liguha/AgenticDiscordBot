@@ -1,8 +1,8 @@
 """Pick a random integer in range [lower;upper]."""
 
 from random import randint
-from discord import app_commands, Interaction, Message, Client
-from .base import MessageCommand, InteractionCommand
+from discord import Interaction, Message, Client
+from .base import InteractionCommand, MessageCommand
 from ....events import EventBroker
 
 __all__ = ["message_random", "interaction_random"]
@@ -18,7 +18,7 @@ async def message_random(broker: EventBroker, client: Client, message: Message, 
     number = randint(lower, upper)
     await message.reply(f"Your number is **{number}**")
 
-@app_commands.describe(**ARGS_DESC)
+@InteractionCommand.add_descriptions(**ARGS_DESC)
 @InteractionCommand.with_name("random")
 async def interaction_random(broker: EventBroker, interaction: Interaction, state: None, lower: int, upper: int) -> None:
     number = randint(lower, upper)

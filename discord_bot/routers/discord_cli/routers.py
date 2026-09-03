@@ -1,5 +1,5 @@
 from __future__ import annotations
-from discord import Guild, Client
+from discord import Guild, Client, InteractionType, Interaction
 from .commands import InteractionCommand, MessageCommand, CallbackPostprocessing
 from ..base import Router, DiscordGuildRouter
 from ..state_manager import GroupState
@@ -65,15 +65,21 @@ class DiscordCLIRouter(Router):
 
     async def route_interaction(self, interact_event: DiscordInteractionEvent) -> None:
         interaction = interact_event.payload
-        name = getattr(interaction.command, "name")
+        if interaction.type is not InteractionType.application_command:
+            if interaction.type is InteractionType.auto_complete:
+                await InteractionCommand.dispatch_autocomplete(interaction)
+            return
+        data = interaction.data or {}
+        name = data.get("name")
         if name is None:
             return
         func = InteractionCommand.from_name(name)
         if func is None:
-            await interaction.response.defer(thinking=True)
+            await interaction.response.defer()
             await interaction.followup.send(f"Command `{name}` doesn't exist.")
             return
-        kwds = {x["name"]: x["value"] for x in interaction.data.get("options", {})} # TODO: generalize rudimentary parser
+        kwds = {x["name"]: x["value"] for x in data.get("options", [])}
+        await interaction.response.defer()
         func_node = self.group_state[func.group_id]
         async with func_node.lock():
             state = func_node[...]

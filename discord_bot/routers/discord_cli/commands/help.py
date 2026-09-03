@@ -1,7 +1,7 @@
 """View detailed information about available commands."""
 
-from discord import app_commands, Interaction, Message, Client
-from .base import MessageCommand, InteractionCommand
+from discord import Interaction, Message, Client
+from .base import InteractionCommand, MessageCommand
 from ....events import EventBroker
 from ....state_types import PrefixState
 
@@ -11,9 +11,9 @@ ARGS_DESC = {
     "command": "The specific command name to look up details for"
 }
 
-async def command_autocomplete(interaction: Interaction, current: str) -> list[app_commands.Choice[str]]:
+async def command_autocomplete(interaction: Interaction, current: str) -> list[InteractionCommand.Choice]:
     return [
-        app_commands.Choice(name=name, value=name)
+        InteractionCommand.Choice(name=name, value=name)
         for name in InteractionCommand.COMMANDS
         if current.lower() in name.lower()
     ][:25]
@@ -36,8 +36,8 @@ async def message_help(broker: EventBroker, client: Client, message: Message, st
     return state
 
 
-@app_commands.describe(**ARGS_DESC)
-@app_commands.autocomplete(command=command_autocomplete)
+@InteractionCommand.add_descriptions(**ARGS_DESC)
+@InteractionCommand.add_autocompletes(command=command_autocomplete)
 @InteractionCommand.with_name("help", "prefix")
 async def interaction_help(broker: EventBroker, interaction: Interaction, state: PrefixState, command: str | None = None) -> PrefixState:
     if not command:

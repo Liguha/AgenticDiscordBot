@@ -5,9 +5,9 @@ import re
 from typing import Any
 from functools import lru_cache
 from argparse import ArgumentParser
-from discord import app_commands, Interaction, Message, Client
+from discord import Interaction, Message, Client
 from discord.utils import escape_markdown, escape_mentions
-from .base import MessageCommand, InteractionCommand
+from .base import InteractionCommand, MessageCommand
 from ....events import EventBroker
 from ....actions import search_web
 from ....return_types import WebSearchResult
@@ -82,8 +82,8 @@ async def message_search(broker: EventBroker, client: Client, message: Message, 
     results, _ = await search_web(broker, client, None, query, limit=limit, mode="hybrid", search_type="auto")
     await message.reply(_format_answer(results))
 
-@app_commands.describe(**ARGS_DESC)
+@InteractionCommand.add_descriptions(**ARGS_DESC)
 @InteractionCommand.with_name("search")
-async def interaction_search(broker: EventBroker, interaction: Interaction, state: None, query: str, limit: app_commands.Range[int, 1, MAX_LIMIT] = 3) -> None:
+async def interaction_search(broker: EventBroker, interaction: Interaction, state: None, query: str, limit: InteractionCommand.Range[int, 1, MAX_LIMIT] = 3) -> None:
     results, _ = await search_web(broker, interaction.client, None, query, limit=limit, mode="hybrid", search_type="auto")
     await interaction.followup.send(_format_answer(results))
