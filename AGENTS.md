@@ -48,3 +48,4 @@ This project uses a distinctive wrapper idiom for `Action`, `MessageCommand`, `I
 - [CLI Commands Rules](discord_bot/routers/discord_cli/commands/AGENTS.md)
 - [Agent Tools Rules](discord_bot/routers/discord_agent/tools/AGENTS.md)
 - [Events Rules](discord_bot/events/AGENTS.md)
+- [Utils Rules](discord_bot/utils/AGENTS.md)

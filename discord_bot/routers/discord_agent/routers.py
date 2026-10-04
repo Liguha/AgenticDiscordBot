@@ -1,7 +1,7 @@
 from __future__ import annotations
 from discord import Guild, Client, Member
 from .tools import Toolset
-from .api_session import LLMSession
+from .utils import LLMSession
 from .config import TEXT_CHAT_MODEL, SYSTEM_PROMPT, PROVIDER_BASE_URL
 from ..base import Router, DiscordGuildRouter
 from ..state_manager import GroupState
